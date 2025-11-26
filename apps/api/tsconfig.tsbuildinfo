@@ -1,0 +1,1 @@
+{"root":["./src/index.ts","./src/db/connection.js","./src/routes/matches.ts","./src/routes/players.ts","./src/routes/teams.ts"],"version":"5.9.3"}
