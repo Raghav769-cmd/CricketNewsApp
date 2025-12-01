@@ -71,7 +71,7 @@ router.delete('/:id', async (req, res) => {
     if (result.rows.length === 0) {
       return res.status(404).send('Player not found');
     }
-    res.json({ message: 'Player deleted successfully' });
+    res.json({ message: 'Player deleted successfully', player: result.rows[0] });
   } catch (err) {
     console.error(err);
     res.status(500).send('Server Error');

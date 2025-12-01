@@ -1,0 +1,47 @@
+.container {
+  padding: 20px;
+  font-family: Arial, sans-serif;
+  background-color: #f9f9f9;
+}
+
+.title {
+  font-size: 2rem;
+  color: #333;
+  margin-bottom: 20px;
+}
+
+.loading {
+  font-size: 1.2rem;
+  color: #666;
+}
+
+.matchesList {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 20px;
+}
+
+.matchCard {
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 15px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  transition: transform 0.2s;
+}
+
+.matchCard:hover {
+  transform: translateY(-5px);
+}
+
+.matchCard h2 {
+  font-size: 1.5rem;
+  color: #0070f3;
+  margin-bottom: 10px;
+}
+
+.matchCard p {
+  margin: 5px 0;
+  font-size: 1rem;
+  color: #555;
+}
