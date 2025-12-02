@@ -1,1 +1,28 @@
 @import "tailwindcss";
+
+@layer base {
+  :root {
+    --cricket-primary: #0f766e;
+    --cricket-primary-dark: #134e4a;
+    --cricket-secondary: #f97316;
+    --cricket-accent: #8b5cf6;
+    --cricket-live: #16a34a;
+    --cricket-bg: #f8fafc;
+    --cricket-card: #ffffff;
+    --cricket-border: #e2e8f0;
+  }
+  
+  body {
+    @apply bg-slate-50 text-gray-900;
+  }
+}
+
+@layer utilities {
+  .gradient-primary {
+    background: linear-gradient(135deg, #0f766e 0%, #14b8a6 100%);
+  }
+  
+  .gradient-card {
+    background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+  }
+}

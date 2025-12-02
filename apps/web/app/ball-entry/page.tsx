@@ -26,13 +26,15 @@ export default function BallEntry() {
   const [teams, setTeams] = useState<Team[]>([]);
   const [selectedMatch, setSelectedMatch] = useState<number>(0);
   const [battingTeamId, setBattingTeamId] = useState<number>(0);
-  const [overNumber, setOverNumber] = useState<number>(1);
-  const [ballNumber, setBallNumber] = useState<number>(1);
+  // Represented as completed overs and balls in current over (so display starts at 0.0)
+  const [overNumber, setOverNumber] = useState<number>(0);
+  const [ballNumber, setBallNumber] = useState<number>(0);
   const [runs, setRuns] = useState<number>(0);
   const [extras, setExtras] = useState<string>('0');
   const [extraType, setExtraType] = useState<string>('none');
   const [wicket, setWicket] = useState<boolean>(false);
-  const [batsmanId, setBatsmanId] = useState<number>(0);
+  const [strikerId, setStrikerId] = useState<number>(0);
+  const [nonStrikerId, setNonStrikerId] = useState<number>(0);
   const [bowlerId, setBowlerId] = useState<number>(0);
   const [eventText, setEventText] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
@@ -60,6 +62,7 @@ export default function BallEntry() {
       const url = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000') + '/api/players';
       const response = await fetch(url);
       const data = await response.json();
+      console.log(data)
       setPlayers(data);
     } catch (error) {
       console.error('Error fetching players:', error);
@@ -80,10 +83,9 @@ export default function BallEntry() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // batsmanId can be optional for wides/no-balls/byes/leg-byes
     const needsBatsman = extraType === 'none';
-    if (!selectedMatch || !battingTeamId || !bowlerId || (needsBatsman && !batsmanId)) {
-      setMessage('Please fill all required fields');
+    if (!selectedMatch || !battingTeamId || !bowlerId || (needsBatsman && !strikerId)) {
+      setMessage('Please fill all required fields (striker must be selected)');
       return;
     }
 
@@ -91,6 +93,9 @@ export default function BallEntry() {
     setMessage('');
 
     try {
+      const overToSend = overNumber + 1;
+      const ballToSend = ballNumber + 1; //
+
       const url = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000') + `/api/matches/${selectedMatch}/ball`;
       const response = await fetch(url, {
         method: 'POST',
@@ -98,16 +103,16 @@ export default function BallEntry() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          overNumber,
-          ballNumber,
+          overNumber: overToSend,
+          ballNumber: ballToSend,
           runs,
           extras,
           extraType,
           wicket,
           is_wicket: wicket,
-          // send event: prefer user eventText, otherwise set the extraType (so backend can detect wides/no-balls)
           event: eventText && eventText.trim().length > 0 ? eventText.trim() : (extraType !== 'none' ? extraType : null),
-          batsmanId: batsmanId || null,
+          batsmanId: strikerId || null,
+          nonStrikerId: nonStrikerId || null,
           bowlerId,
           battingTeamId,
         }),
@@ -115,15 +120,31 @@ export default function BallEntry() {
 
       if (response.ok) {
         setMessage('✅ Ball added successfully!');
-        // Auto-increment ball number
-        // Only increment ball number for legal deliveries (not wides/no-balls)
         const illegal = /^(wide|wd|no-?ball|nb)$/i.test(extraType);
+        const ballToSend = ballNumber + 1;
+        const isOddRun = runs === 1 || runs === 3 || runs === 5;
+
         if (!illegal) {
-          if (ballNumber < 6) {
-            setBallNumber(ballNumber + 1);
-          } else {
-            setBallNumber(1);
+          if (ballToSend === 6) {
+            // last ball of over: apply special rule
+            // If single is taken on last ball, do NOT swap batters (per requirement)
+            if (runs !== 1) {
+              // swap due to end of over
+              const tmp = strikerId;
+              setStrikerId(nonStrikerId);
+              setNonStrikerId(tmp);
+            }
+            // complete over
             setOverNumber(overNumber + 1);
+            setBallNumber(0);
+          } else {
+            // not last ball
+            if (isOddRun) {
+              const tmp = strikerId;
+              setStrikerId(nonStrikerId);
+              setNonStrikerId(tmp);
+            }
+            setBallNumber(ballNumber + 1);
           }
         }
         setRuns(0);
@@ -190,12 +211,12 @@ export default function BallEntry() {
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Over Number</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Over Number (completed)</label>
               <input
                 type="number"
                 value={overNumber}
                 onChange={(e) => setOverNumber(Number(e.target.value))}
-                min={1}
+                min={0}
                 max={50}
                 className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
                 required
@@ -207,25 +228,65 @@ export default function BallEntry() {
                 type="number"
                 value={ballNumber}
                 onChange={(e) => setBallNumber(Number(e.target.value))}
-                min={1}
-                max={6}
+                min={0}
+                max={5}
                 className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
                 required
               />
             </div>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Batsman</label>
+          {/* Striker and Non-Striker Batsmen */}
+          <div className="border-2 border-green-500 rounded-lg p-4 bg-green-50">
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-sm font-bold text-green-800 flex items-center">
+                <span className="inline-block w-3 h-3 bg-green-600 rounded-full mr-2"></span>
+                Striker (On Strike)
+              </label>
+              <button
+                type="button"
+                onClick={() => {
+                  const temp = strikerId;
+                  setStrikerId(nonStrikerId);
+                  setNonStrikerId(temp);
+                }}
+                className="text-xs bg-green-600 text-white px-3 py-1 rounded hover:bg-green-700"
+              >
+                ↔ Swap
+              </button>
+            </div>
             <select
-              value={batsmanId}
-              onChange={(e) => setBatsmanId(Number(e.target.value))}
-              className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
-              required
+              value={strikerId}
+              onChange={(e) => setStrikerId(Number(e.target.value))}
+              className="w-full p-2 border-2 border-green-400 rounded focus:ring-2 focus:ring-green-500 bg-white"
+              required={extraType === 'none'}
             >
-              <option value={0}>Select Batsman</option>
+              <option value={0}>Select Striker</option>
               {players
-                .filter((p) => battingTeamId === 0 || p.team_id === battingTeamId)
+                .filter((p) => battingTeamId === 0 || Number(p.team_id) === battingTeamId)
+                .filter((p) => p.id !== nonStrikerId)
+                .map((player) => (
+                  <option key={player.id} value={player.id}>
+                    {player.name}
+                  </option>
+                ))}
+            </select>
+          </div>
+
+          <div className="border-2 border-blue-500 rounded-lg p-4 bg-blue-50">
+            <label className="text-sm font-bold text-blue-800 flex items-center mb-2">
+              <span className="inline-block w-3 h-3 bg-blue-600 rounded-full mr-2"></span>
+              Non-Striker
+            </label>
+            <select
+              value={nonStrikerId}
+              onChange={(e) => setNonStrikerId(Number(e.target.value))}
+              className="w-full p-2 border-2 border-blue-400 rounded focus:ring-2 focus:ring-blue-500 bg-white"
+            >
+              <option value={0}>Select Non-Striker</option>
+              {players
+                .filter((p) => battingTeamId === 0 || Number(p.team_id) === battingTeamId)
+                .filter((p) => p.id !== strikerId)
                 .map((player) => (
                   <option key={player.id} value={player.id}>
                     {player.name}
@@ -244,7 +305,7 @@ export default function BallEntry() {
             >
               <option value={0}>Select Bowler</option>
               {players
-                .filter((p) => battingTeamId === 0 || p.team_id !== battingTeamId)
+                .filter((p) => battingTeamId === 0 || Number(p.team_id) !== battingTeamId)
                 .map((player) => (
                   <option key={player.id} value={player.id}>
                     {player.name}

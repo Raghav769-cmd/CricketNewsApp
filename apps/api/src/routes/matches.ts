@@ -9,6 +9,7 @@ router.get('/', async (req, res) => {
     try {
         const result = await pool.query('SELECT * FROM matches');
         res.json(result.rows);
+        // console.log(result.rows);
     } catch (err) {
         console.error(err);
         res.status(500).send('Server Error');
@@ -96,7 +97,7 @@ router.get('/:id/score', async (req, res) => {
         o.batting_team_id,
         SUM(b.runs + COALESCE(CAST(b.extras AS INTEGER), 0)) as total_runs,
         COUNT(CASE WHEN b.is_wicket THEN 1 END) as wickets,
-        COUNT(DISTINCT o.over_number) as completed_overs,
+        COALESCE(MAX(o.over_number), 1) - 1 as completed_overs,
         MAX(CASE WHEN o.over_number = (SELECT MAX(over_number) FROM overs WHERE match_id = $1 AND batting_team_id = o.batting_team_id) 
             THEN (SELECT SUM(CASE WHEN NOT ((COALESCE(extras,'0') ~* '^(wide|wd|no-?ball|nb)') OR (COALESCE(event,'') ~* '^(wide|wd|no-?ball|nb)')) THEN 1 ELSE 0 END) FROM balls WHERE over_id = o.id) 
             ELSE 0 END) as balls_in_current_over
@@ -135,7 +136,7 @@ router.get('/:id/teams/:teamId/score', async (req, res) => {
       SELECT 
         SUM(b.runs + COALESCE(CAST(b.extras AS INTEGER), 0)) as total_runs,
         COUNT(CASE WHEN b.is_wicket THEN 1 END) as wickets,
-        COUNT(DISTINCT o.over_number) as completed_overs,
+        COALESCE(MAX(o.over_number), 1) - 1 as completed_overs,
         MAX(CASE WHEN o.over_number = (SELECT MAX(over_number) FROM overs WHERE match_id = $1 AND batting_team_id = $2) 
             THEN (SELECT SUM(CASE WHEN NOT ((COALESCE(extras,'0') ~* '^(wide|wd|no-?ball|nb)') OR (COALESCE(event,'') ~* '^(wide|wd|no-?ball|nb)')) THEN 1 ELSE 0 END) FROM balls WHERE over_id = o.id) 
             ELSE 0 END) as balls_in_current_over
@@ -207,9 +208,11 @@ router.post('/:matchId/ball', async (req, res) => {
     // Emit live update via socket.io
     const io = getIO();
     if (io) {
+      const displayOver = Math.max(0, overNumber - 1);
+      const displayBall = Math.max(0, ballNumber - 1);
       const payload = {
         matchId: String(matchId),
-        liveScore: `Over ${overNumber}.${ballNumber}: ${runs || 0} runs${wicket ? ' - WICKET!' : ''}`,
+        liveScore: `Over ${displayOver}.${displayBall}: ${runs || 0} runs${wicket ? ' - WICKET!' : ''}`,
         ball: ballResult.rows[0]
       };
       console.log('Emitting ballUpdate:', payload);
@@ -345,12 +348,29 @@ router.get('/:id/scorecard', async (req, res) => {
       ORDER BY o.batting_team_id;
     `;
 
-    const [batRes, disRes, bowlRes, totalsRes] = await Promise.all([
+    // Determine striker (the batsman who faced the most recent ball) per batting team
+    const strikerQuery = `
+      SELECT DISTINCT ON (o.batting_team_id)
+        o.batting_team_id AS team_id,
+        b.batsman_id AS striker_id
+      FROM balls b
+      JOIN overs o ON b.over_id = o.id
+      WHERE o.match_id = $1 AND b.batsman_id IS NOT NULL
+      ORDER BY o.batting_team_id, b.id DESC
+    `;
+
+    const [batRes, disRes, bowlRes, totalsRes, strikerRes] = await Promise.all([
       pool.query(battingQuery, [id]),
       pool.query(dismissalsQuery, [id]),
       pool.query(bowlingQuery, [id]),
-      pool.query(totalsQuery, [id])
+      pool.query(totalsQuery, [id]),
+      pool.query(strikerQuery, [id])
     ]);
+
+    const strikerMap: Record<number, number> = {};
+    for (const r of strikerRes.rows) {
+      strikerMap[r.team_id] = r.striker_id;
+    }
 
     // Map dismissals by team_id + batsman_id to the earliest dismissal
     const dismissalMap: Record<string, any> = {};
@@ -377,6 +397,8 @@ router.get('/:id/scorecard', async (req, res) => {
         sixes: parseInt(r.sixes) || 0,
         dismissal: dismissalText,
         notOut
+      ,
+        isStriker: strikerMap[teamId] === r.batsman_id
       });
     }
 
