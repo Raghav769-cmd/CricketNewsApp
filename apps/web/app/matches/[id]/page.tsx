@@ -98,6 +98,22 @@ export default function MatchDetailPage() {
     }
   };
 
+  const formatOverBall = (overNumber?: number | null, ballNumber?: number | null) => {
+    if (overNumber == null || ballNumber == null) return "0.0";
+    const o = Number(overNumber);
+    const b = Number(ballNumber);
+    if (Number.isNaN(o) || Number.isNaN(b)) return "0.0";
+
+    let displayOver = Math.max(0, o - 1);
+    let displayBall = Math.max(0, b);
+    
+    if (displayBall >= 6) {
+      displayOver += Math.floor(displayBall / 6);
+      displayBall = displayBall % 6;
+    }
+    return `${displayOver}.${displayBall}`;
+  };
+
   const renderDescriptions = (ins: Insights | null) => {
     if (!ins) return [] as string[];
     const lines: string[] = [];
@@ -234,7 +250,7 @@ export default function MatchDetailPage() {
                         <div key={tid} className="bg-slate-50 rounded-lg p-6 border border-slate-200">
                           <div className="flex items-center justify-between mb-4">
                             <div className="flex items-center space-x-3">
-                              <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg flex items-center justify-center text-white font-bold">
+                              <div className="w-12 h-12 bg-linear-to-br from-purple-500 to-purple-600 rounded-lg flex items-center justify-center text-white font-bold">
                                 T{tid}
                               </div>
                               <div>
@@ -315,7 +331,7 @@ export default function MatchDetailPage() {
                   </div>
                   <div className="p-6 space-y-6">
                     {/* Commentary */}
-                    <div className="bg-gradient-to-r from-teal-50 to-teal-100 rounded-lg p-4 border-l-4 border-teal-500">
+                    <div className="bg-linear-to-r from-teal-50 to-teal-100 rounded-lg p-4 border-l-4 border-teal-500">
                       <div className="space-y-2">
                         {renderDescriptions(insights).map((l, i) => (
                           <p key={i} className="text-gray-700 leading-relaxed">• {l}</p>
@@ -360,8 +376,6 @@ export default function MatchDetailPage() {
                       </h3>
                       <div className="space-y-2 max-h-96 overflow-y-auto">
                         {(insights.balls || []).slice().reverse().map(b => {
-                          const displayOver = Math.max(0, (b.overNumber || 1) - 1);
-                          const displayBall = Math.max(0, (b.ballNumber || 1));
                           if (b.event && String(b.event).includes('placeholder')) return null;
                           
                           return (
@@ -378,7 +392,7 @@ export default function MatchDetailPage() {
                                   </div>
                                 </div>
                                 <div className="text-right ml-4">
-                                  <div className="text-sm font-semibold text-gray-600">Over {displayOver}.{displayBall}</div>
+                                  <div className="text-sm font-semibold text-gray-600">Over {formatOverBall(b.overNumber, b.ballNumber)}</div>
                                   <span className={`inline-block px-3 py-1 rounded-full text-xs font-bold mt-1 ${
                                     b.runs === 6 ? 'bg-purple-500 text-white' :
                                     b.runs === 4 ? 'bg-green-500 text-white' :

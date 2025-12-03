@@ -135,17 +135,38 @@ export default function Matches() {
     return lines;
   };
 
-  // Optional: helper to format over/ball from 1-based values
+  // Helper to format overs string - handles cases like "0.6" -> "1.0", "1.6" -> "2.0"
+  const formatOvers = (oversStr?: string | null) => {
+    if (!oversStr) return "0.0";
+    const parts = String(oversStr).split(".");
+    const completedOvers = Number(parts[0] || 0);
+    const ballsInOver = Number(parts[1] || 0);
+    
+    if (ballsInOver >= 6) {
+      // Roll over to next over
+      const extraOvers = Math.floor(ballsInOver / 6);
+      const remainingBalls = ballsInOver % 6;
+      return `${completedOvers + extraOvers}.${remainingBalls}`;
+    }
+    return `${completedOvers}.${ballsInOver}`;
+  };
+
+  // Helper to format over/ball from 1-based DB values to 0-based display
   const formatOverBall = (overNumber?: number | null, ballNumber?: number | null) => {
     if (overNumber == null || ballNumber == null) return "0.0";
     const o = Number(overNumber);
     const b = Number(ballNumber);
     if (Number.isNaN(o) || Number.isNaN(b)) return "0.0";
 
-    const totalBalls = (o - 1) * 6 + (b - 1);
-    const over = Math.max(0, Math.floor(totalBalls / 6));
-    const ball = Math.max(0, totalBalls % 6);
-    return `${over}.${ball}`;
+    // Convert from 1-based to 0-based display
+    const displayOver = Math.max(0, o - 1);
+    const displayBall = Math.max(0, b - 1);
+    
+    // Handle ball rollover (if ball is 6, it means over completed)
+    if (displayBall >= 6) {
+      return `${displayOver + 1}.${displayBall % 6}`;
+    }
+    return `${displayOver}.${displayBall}`;
   };
 
   useEffect(() => {

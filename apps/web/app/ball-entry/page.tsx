@@ -18,6 +18,8 @@ interface Match {
   team1: string;
   team2: string;
   status: string;
+  team1_id: number;
+  team2_id: number;
 }
 
 export default function BallEntry() {
@@ -26,7 +28,6 @@ export default function BallEntry() {
   const [teams, setTeams] = useState<Team[]>([]);
   const [selectedMatch, setSelectedMatch] = useState<number>(0);
   const [battingTeamId, setBattingTeamId] = useState<number>(0);
-  // Represented as completed overs and balls in current over (so display starts at 0.0)
   const [overNumber, setOverNumber] = useState<number>(0);
   const [ballNumber, setBallNumber] = useState<number>(0);
   const [runs, setRuns] = useState<number>(0);
@@ -39,6 +40,24 @@ export default function BallEntry() {
   const [eventText, setEventText] = useState<string>("");
   const [loading, setLoading] = useState<boolean>(false);
   const [message, setMessage] = useState<string>("");
+
+  const selectedMatchObj = matches.find((m) => m.id === selectedMatch);
+
+  const matchTeamIds: number[] = selectedMatchObj
+    ? [selectedMatchObj.team1_id, selectedMatchObj.team2_id]
+    : [];
+
+  // Only players from these two teams
+  const playersInMatch = players.filter((p) =>
+    matchTeamIds.includes(p.team_id)
+  );
+
+  useEffect(() => {
+    setBattingTeamId(0);
+    setStrikerId(0);
+    setNonStrikerId(0);
+    setBowlerId(0);
+  }, [selectedMatch]);
 
   useEffect(() => {
     fetchMatches();
@@ -58,6 +77,8 @@ export default function BallEntry() {
       const normalized: Match[] = data.map((m: any) => ({
         ...m,
         id: Number(m.id),
+        team1_id: Number(m.team1_id),
+        team2_id: Number(m.team2_id),
       }));
 
       setMatches(normalized);
@@ -77,7 +98,7 @@ export default function BallEntry() {
         id: Number(p.id),
         team_id: Number(p.team_id),
       }));
-
+      console.log(normalized);
       setPlayers(normalized);
     } catch (error) {
       console.error("Error fetching players:", error);
@@ -105,7 +126,12 @@ export default function BallEntry() {
     e.preventDefault();
 
     const needsBatsman = extraType === "none";
-    if (!selectedMatch || !battingTeamId || !bowlerId || (needsBatsman && !strikerId)) {
+    if (
+      !selectedMatch ||
+      !battingTeamId ||
+      !bowlerId ||
+      (needsBatsman && !strikerId)
+    ) {
       setMessage("Please fill all required fields (striker must be selected)");
       return;
     }
@@ -135,8 +161,8 @@ export default function BallEntry() {
             eventText && eventText.trim().length > 0
               ? eventText.trim()
               : extraType !== "none"
-              ? extraType
-              : null,
+                ? extraType
+                : null,
           batsmanId: strikerId || null,
           nonStrikerId: nonStrikerId || null,
           bowlerId,
@@ -194,8 +220,12 @@ export default function BallEntry() {
         <div className="max-w-5xl mx-auto">
           {/* Header */}
           <div className="mb-8">
-            <h1 className="text-4xl font-bold text-gray-800 mb-2">Live Scoring</h1>
-            <p className="text-gray-600">Enter ball-by-ball data for live match updates</p>
+            <h1 className="text-4xl font-bold text-gray-800 mb-2">
+              Live Scoring
+            </h1>
+            <p className="text-gray-600">
+              Enter ball-by-ball data for live match updates
+            </p>
           </div>
 
           {message && (
@@ -213,11 +243,16 @@ export default function BallEntry() {
           <div className="grid lg:grid-cols-3 gap-6">
             {/* Main Form */}
             <div className="lg:col-span-2">
-              <form onSubmit={handleSubmit} className="bg-white rounded-xl shadow-lg p-6 space-y-6">
+              <form
+                onSubmit={handleSubmit}
+                className="bg-white rounded-xl shadow-lg p-6 space-y-6"
+              >
                 {/* Match and Team Selection */}
                 <div className="grid md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">Match</label>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      Match
+                    </label>
                     <select
                       value={selectedMatch}
                       onChange={(e) => setSelectedMatch(Number(e.target.value))}
@@ -234,7 +269,9 @@ export default function BallEntry() {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">Batting Team</label>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      Batting Team
+                    </label>
                     <select
                       value={battingTeamId}
                       onChange={(e) => setBattingTeamId(Number(e.target.value))}
@@ -242,18 +279,23 @@ export default function BallEntry() {
                       required
                     >
                       <option value={0}>Select Batting Team</option>
-                      {teams.map((team) => (
-                        <option key={team.id} value={team.id}>
-                          {team.name}
-                        </option>
-                      ))}
+                      {selectedMatchObj &&
+                        teams
+                          .filter((t) => matchTeamIds.includes(t.id))
+                          .map((team) => (
+                            <option key={team.id} value={team.id}>
+                              {team.name}
+                            </option>
+                          ))}
                     </select>
                   </div>
                 </div>
 
                 {/* Over Information */}
                 <div className="bg-teal-50 rounded-lg p-4 border-2 border-teal-200">
-                  <h3 className="text-sm font-bold text-teal-800 mb-3">Over Information</h3>
+                  <h3 className="text-sm font-bold text-teal-800 mb-3">
+                    Over Information
+                  </h3>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-semibold text-gray-700 mb-2">
@@ -315,9 +357,10 @@ export default function BallEntry() {
                       required={extraType === "none"}
                     >
                       <option value={0}>Select Striker</option>
-                      {players
+                      {playersInMatch
                         .filter(
-                          (p) => battingTeamId === 0 || p.team_id === battingTeamId
+                          (p) =>
+                            battingTeamId === 0 || p.team_id === battingTeamId
                         )
                         .filter((p) => p.id !== nonStrikerId)
                         .map((player) => (
@@ -328,7 +371,7 @@ export default function BallEntry() {
                     </select>
                   </div>
 
-                  <div className="bg-gradient-to-r from-blue-50 to-blue-100 rounded-lg p-4 border-2 border-blue-400">
+                  <div className="bg-linear-to-r from-blue-50 to-blue-100 rounded-lg p-4 border-2 border-blue-400">
                     <label className="text-sm font-bold text-blue-800 flex items-center mb-3">
                       <span className="inline-block w-3 h-3 bg-blue-600 rounded-full mr-2"></span>
                       Non-Striker
@@ -339,9 +382,10 @@ export default function BallEntry() {
                       className="w-full p-3 border-2 border-blue-400 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
                     >
                       <option value={0}>Select Non-Striker</option>
-                      {players
+                      {playersInMatch
                         .filter(
-                          (p) => battingTeamId === 0 || p.team_id === battingTeamId
+                          (p) =>
+                            battingTeamId === 0 || p.team_id === battingTeamId
                         )
                         .filter((p) => p.id !== strikerId)
                         .map((player) => (
@@ -355,7 +399,9 @@ export default function BallEntry() {
 
                 {/* Bowler Selection */}
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">Bowler</label>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Bowler
+                  </label>
                   <select
                     value={bowlerId}
                     onChange={(e) => setBowlerId(Number(e.target.value))}
@@ -363,9 +409,10 @@ export default function BallEntry() {
                     required
                   >
                     <option value={0}>Select Bowler</option>
-                    {players
+                    {playersInMatch
                       .filter(
-                        (p) => battingTeamId === 0 || p.team_id !== battingTeamId
+                        (p) =>
+                          battingTeamId === 0 || p.team_id !== battingTeamId
                       )
                       .map((player) => (
                         <option key={player.id} value={player.id}>
@@ -377,7 +424,9 @@ export default function BallEntry() {
 
                 {/* Runs and Extras */}
                 <div className="bg-slate-50 rounded-lg p-4 border-2 border-slate-200">
-                  <h3 className="text-sm font-bold text-gray-800 mb-4">Ball Outcome</h3>
+                  <h3 className="text-sm font-bold text-gray-800 mb-4">
+                    Ball Outcome
+                  </h3>
                   <div className="grid md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-semibold text-gray-700 mb-2">
@@ -394,8 +443,8 @@ export default function BallEntry() {
                                 ? run === 6
                                   ? "bg-purple-600 text-white shadow-lg scale-105"
                                   : run === 4
-                                  ? "bg-green-600 text-white shadow-lg scale-105"
-                                  : "bg-teal-600 text-white shadow-lg scale-105"
+                                    ? "bg-green-600 text-white shadow-lg scale-105"
+                                    : "bg-teal-600 text-white shadow-lg scale-105"
                                 : "bg-white border-2 border-gray-300 text-gray-700 hover:border-teal-400"
                             }`}
                           >
@@ -472,7 +521,7 @@ export default function BallEntry() {
                 <button
                   type="submit"
                   disabled={loading}
-                  className="w-full bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-700 hover:to-teal-800 text-white py-4 px-6 rounded-lg font-bold text-lg shadow-lg hover:shadow-xl disabled:from-gray-400 disabled:to-gray-500 disabled:cursor-not-allowed transition-all duration-200 transform hover:scale-[1.02]"
+                  className="w-full bg-linear-to-r from-teal-600 to-teal-700 hover:from-teal-700 hover:to-teal-800 text-white py-4 px-6 rounded-lg font-bold text-lg shadow-lg hover:shadow-xl disabled:from-gray-400 disabled:to-gray-500 disabled:cursor-not-allowed transition-all duration-200 transform hover:scale-[1.02]"
                 >
                   {loading ? (
                     <span className="flex items-center justify-center">
@@ -495,8 +544,10 @@ export default function BallEntry() {
                 </h3>
 
                 <div className="space-y-4">
-                  <div className="bg-gradient-to-r from-teal-50 to-teal-100 rounded-lg p-4 border-2 border-teal-200">
-                    <div className="text-sm text-gray-600 mb-1">Current Ball</div>
+                  <div className="bg-linear-to-r from-teal-50 to-teal-100 rounded-lg p-4 border-2 border-teal-200">
+                    <div className="text-sm text-gray-600 mb-1">
+                      Current Ball
+                    </div>
                     <div className="text-3xl font-bold text-teal-700">
                       {overNumber}.{ballNumber}
                     </div>
@@ -504,10 +555,11 @@ export default function BallEntry() {
 
                   {selectedMatch > 0 && (
                     <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
-                      <div className="text-sm text-gray-600 mb-2">Selected Match</div>
+                      <div className="text-sm text-gray-600 mb-2">
+                        Selected Match
+                      </div>
                       <div className="font-semibold text-gray-800">
-                        {matches.find((m) => m.id === selectedMatch)?.team1}{" "}
-                        vs{" "}
+                        {matches.find((m) => m.id === selectedMatch)?.team1} vs{" "}
                         {matches.find((m) => m.id === selectedMatch)?.team2}
                       </div>
                     </div>
@@ -515,7 +567,9 @@ export default function BallEntry() {
 
                   {battingTeamId > 0 && (
                     <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
-                      <div className="text-sm text-gray-600 mb-2">Batting Team</div>
+                      <div className="text-sm text-gray-600 mb-2">
+                        Batting Team
+                      </div>
                       <div className="font-semibold text-gray-800">
                         {teams.find((t) => t.id === battingTeamId)?.name}
                       </div>
@@ -536,7 +590,9 @@ export default function BallEntry() {
 
                   {nonStrikerId > 0 && (
                     <div className="bg-blue-50 rounded-lg p-4 border-2 border-blue-300">
-                      <div className="text-sm text-blue-700 mb-2">Non-Striker</div>
+                      <div className="text-sm text-blue-700 mb-2">
+                        Non-Striker
+                      </div>
                       <div className="font-bold text-gray-800">
                         {players.find((p) => p.id === nonStrikerId)?.name}
                       </div>

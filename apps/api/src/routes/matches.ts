@@ -1,93 +1,120 @@
-import { Router } from 'express';
-import pool from '../db/connection.js';
-import { getIO } from '../server.ts';
+import { Router } from "express";
+import pool from "../db/connection.js";
+import { getIO } from "../server.ts";
 
 const router: Router = Router();
 
 // get all matches
-router.get('/', async (req, res) => {
-    try {
-        const result = await pool.query('SELECT * FROM matches');
-        res.json(result.rows);
-        // console.log(result.rows);
-    } catch (err) {
-        console.error(err);
-        res.status(500).send('Server Error');
-    }
+router.get("/", async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT 
+        m.*,
+        t1.id   AS team1_id,
+        t1.name AS team1_name,
+        t2.id   AS team2_id,
+        t2.name AS team2_name
+      FROM matches m
+      JOIN teams t1 ON t1.id = m.team1
+      JOIN teams t2 ON t2.id = m.team2
+    `);
+    res.json(result.rows);
+    // console.log(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("Server Error");
+  }
 });
 
 // get match by id
-router.get('/:id', async (req, res) => {
+router.get("/:id", async (req, res) => {
   const { id } = req.params;
   try {
-    const result = await pool.query('SELECT * FROM matches WHERE id = $1', [id]);
+    const result = await pool.query(`
+      SELECT 
+        m.*,
+        t1.id   AS team1_id,
+        t1.name AS team1_name,
+        t2.id   AS team2_id,
+        t2.name AS team2_name
+      FROM matches m
+      JOIN teams t1 ON t1.id = m.team1
+      JOIN teams t2 ON t2.id = m.team2
+      WHERE m.id = $1
+    `, [id]);
     if (result.rows.length === 0) {
-      return res.status(404).send('Match not found');
+      return res.status(404).send("Match not found");
     }
     res.json(result.rows[0]);
   } catch (err) {
     console.error(err);
-    res.status(500).send('Server Error');
+    res.status(500).send("Server Error");
   }
 });
 
 // Add match
-router.post('/', async (req, res) => {
+router.post("/", async (req, res) => {
   const { team1, team2, date, venue, score } = req.body;
   try {
     const result = await pool.query(
-      'INSERT INTO matches (team1, team2, date, venue, score) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+      "INSERT INTO matches (team1, team2, date, venue, score) VALUES ($1, $2, $3, $4, $5) RETURNING *",
       [team1, team2, date, venue, score]
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
     console.error(err);
-    res.status(500).send('Server Error');
+    res.status(500).send("Server Error");
   }
 });
 
 // Update a match
-router.put('/:id', async (req, res) => {
+router.put("/:id", async (req, res) => {
   const { id } = req.params;
   const { team1, team2, date, venue, score } = req.body;
   try {
     const result = await pool.query(
-      'UPDATE matches SET team1 = $1, team2 = $2, date = $3, venue = $4, score = $5 WHERE id = $6 RETURNING *',
+      "UPDATE matches SET team1 = $1, team2 = $2, date = $3, venue = $4, score = $5 WHERE id = $6 RETURNING *",
       [team1, team2, date, venue, score, id]
     );
     if (result.rows.length === 0) {
-      return res.status(404).send('Match not found');
+      return res.status(404).send("Match not found");
     }
     res.json(result.rows[0]);
   } catch (err) {
     console.error(err);
-    res.status(500).send('Server Error');
+    res.status(500).send("Server Error");
   }
 });
 
 // Delete a match
-router.delete('/:id', async (req, res) => {
+router.delete("/:id", async (req, res) => {
   const { id } = req.params;
   try {
-    const result = await pool.query('DELETE FROM matches WHERE id = $1 RETURNING *', [id]);
+    const result = await pool.query(
+      "DELETE FROM matches WHERE id = $1 RETURNING *",
+      [id]
+    );
     if (result.rows.length === 0) {
-      return res.status(404).send('Match not found');
+      return res.status(404).send("Match not found");
     }
-    res.json({ message: 'Match deleted successfully' });
+    res.json({ message: "Match deleted successfully" });
   } catch (err) {
     console.error(err);
-    res.status(500).send('Server Error');
+    res.status(500).send("Server Error");
   }
 });
 
 // Get aggregated score for a match (both teams)
-router.get('/:id/score', async (req, res) => {
+router.get("/:id/score", async (req, res) => {
   const { id } = req.params;
   try {
     // Get match details
-    const matchResult = await pool.query('SELECT * FROM matches WHERE id = $1', [id]);
+    const matchResult = await pool.query(
+      "SELECT * FROM matches WHERE id = $1",
+      [id]
+    );
     if (matchResult.rows.length === 0) {
-      return res.status(404).send('Match not found');
+      return res.status(404).send("Match not found");
     }
     const match = matchResult.rows[0];
 
@@ -106,30 +133,41 @@ router.get('/:id/score', async (req, res) => {
       WHERE o.match_id = $1 AND o.batting_team_id IS NOT NULL
       GROUP BY o.batting_team_id
     `;
-    
+
     const scoreResult = await pool.query(scoreQuery, [id]);
-    
-    const scores = scoreResult.rows.map(row => ({
-      teamId: row.batting_team_id,
-      runs: parseInt(row.total_runs) || 0,
-      wickets: parseInt(row.wickets) || 0,
-      overs: `${row.completed_overs || 0}.${row.balls_in_current_over || 0}`
-    }));
+
+    const scores = scoreResult.rows.map((row) => {
+      let completedOvers = parseInt(row.completed_overs) || 0;
+      let ballsInOver = parseInt(row.balls_in_current_over) || 0;
+
+      // Handle rollover: if balls >= 6, add to completed overs
+      if (ballsInOver >= 6) {
+        completedOvers += Math.floor(ballsInOver / 6);
+        ballsInOver = ballsInOver % 6;
+      }
+
+      return {
+        teamId: row.batting_team_id,
+        runs: parseInt(row.total_runs) || 0,
+        wickets: parseInt(row.wickets) || 0,
+        overs: `${completedOvers}.${ballsInOver}`,
+      };
+    });
 
     res.json({
       matchId: parseInt(id),
       team1: match.team1,
       team2: match.team2,
-      scores
+      scores,
     });
   } catch (err) {
-    console.error('Error fetching match score:', err);
-    res.status(500).send('Server Error');
+    console.error("Error fetching match score:", err);
+    res.status(500).send("Server Error");
   }
 });
 
 // Get aggregated score for a specific team in a match
-router.get('/:id/teams/:teamId/score', async (req, res) => {
+router.get("/:id/teams/:teamId/score", async (req, res) => {
   const { id, teamId } = req.params;
   try {
     const scoreQuery = `
@@ -144,42 +182,61 @@ router.get('/:id/teams/:teamId/score', async (req, res) => {
       LEFT JOIN balls b ON b.over_id = o.id
       WHERE o.match_id = $1 AND o.batting_team_id = $2
     `;
-    
+
     const scoreResult = await pool.query(scoreQuery, [id, teamId]);
-    
+
     if (scoreResult.rows.length === 0 || !scoreResult.rows[0].total_runs) {
       return res.json({
         matchId: parseInt(id),
         teamId: parseInt(teamId),
         runs: 0,
         wickets: 0,
-        overs: '0.0'
+        overs: "0.0",
       });
     }
 
     const row = scoreResult.rows[0];
+    let completedOvers = parseInt(row.completed_overs) || 0;
+    let ballsInOver = parseInt(row.balls_in_current_over) || 0;
+
+    // Handle rollover: if balls >= 6, add to completed overs
+    if (ballsInOver >= 6) {
+      completedOvers += Math.floor(ballsInOver / 6);
+      ballsInOver = ballsInOver % 6;
+    }
+
     res.json({
       matchId: parseInt(id),
       teamId: parseInt(teamId),
       runs: parseInt(row.total_runs) || 0,
       wickets: parseInt(row.wickets) || 0,
-      overs: `${row.completed_overs || 0}.${row.balls_in_current_over || 0}`
+      overs: `${completedOvers}.${ballsInOver}`,
     });
   } catch (err) {
-    console.error('Error fetching team score:', err);
-    res.status(500).send('Server Error');
+    console.error("Error fetching team score:", err);
+    res.status(500).send("Server Error");
   }
 });
 
 // Add a new ball to a match
-router.post('/:matchId/ball', async (req, res) => {
+router.post("/:matchId/ball", async (req, res) => {
   const { matchId } = req.params;
-  const { overNumber, ballNumber, runs, extras, wicket, event, batsmanId, bowlerId, battingTeamId } = req.body;
+  const {
+    overNumber,
+    ballNumber,
+    runs,
+    extras,
+    wicket,
+    event,
+    batsmanId,
+    bowlerId,
+    battingTeamId,
+  } = req.body;
 
   try {
     // Find or create the over
     let overResult = await pool.query(
-      'SELECT id FROM overs WHERE match_id = $1 AND over_number = $2 AND batting_team_id = $3',
+      "SELECT id FROM overs WHERE match_id = $1 AND over_number = $2 AND batting_team_id = $3",
       [matchId, overNumber, battingTeamId]
     );
 
@@ -187,7 +244,7 @@ router.post('/:matchId/ball', async (req, res) => {
     if (overResult.rows.length === 0) {
       // Create new over if it doesn't exist
       const newOver = await pool.query(
-        'INSERT INTO overs (match_id, over_number, batting_team_id) VALUES ($1, $2, $3) RETURNING id',
+        "INSERT INTO overs (match_id, over_number, batting_team_id) VALUES ($1, $2, $3) RETURNING id",
         [matchId, overNumber, battingTeamId]
       );
       overId = newOver.rows[0].id;
@@ -196,13 +253,29 @@ router.post('/:matchId/ball', async (req, res) => {
     }
 
     // Insert the ball
-    const eventValue = event && String(event).trim().length > 0 ? String(event).trim() : (wicket ? 'wicket' : null);
-    const isWicket = Boolean(wicket) || (typeof eventValue === 'string' && /wicket|\bout\b/i.test(eventValue));
+    const eventValue =
+      event && String(event).trim().length > 0
+        ? String(event).trim()
+        : wicket
+          ? "wicket"
+          : null;
+    const isWicket =
+      Boolean(wicket) ||
+      (typeof eventValue === "string" && /wicket|\bout\b/i.test(eventValue));
 
     const ballResult = await pool.query(
       `INSERT INTO balls (over_id, ball_number, runs, extras, event, is_wicket, batsman_id, bowler_id) 
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
-      [overId, ballNumber, runs || 0, extras || '0', eventValue, isWicket, batsmanId, bowlerId]
+      [
+        overId,
+        ballNumber,
+        runs || 0,
+        extras || "0",
+        eventValue,
+        isWicket,
+        batsmanId,
+        bowlerId,
+      ]
     );
 
     // Emit live update via socket.io
@@ -212,39 +285,41 @@ router.post('/:matchId/ball', async (req, res) => {
       const displayBall = Math.max(0, ballNumber - 1);
       const payload = {
         matchId: String(matchId),
-        liveScore: `Over ${displayOver}.${displayBall}: ${runs || 0} runs${wicket ? ' - WICKET!' : ''}`,
-        ball: ballResult.rows[0]
+        liveScore: `Over ${displayOver}.${displayBall}: ${runs || 0} runs${wicket ? " - WICKET!" : ""}`,
+        ball: ballResult.rows[0],
       };
-      console.log('Emitting ballUpdate:', payload);
-      io.to(`match_${matchId}`).emit('ballUpdate', payload);
+      console.log("Emitting ballUpdate:", payload);
+      io.to(`match_${matchId}`).emit("ballUpdate", payload);
     }
 
     res.status(201).json(ballResult.rows[0]);
   } catch (err) {
-    console.error('Error adding ball:', err);
-    res.status(500).send('Server Error');
+    console.error("Error adding ball:", err);
+    res.status(500).send("Server Error");
   }
 });
 
 // Convenience endpoint to emit a live update for a match (for testing)
-router.post('/:id/emit', async (req, res) => {
+router.post("/:id/emit", async (req, res) => {
   const { id } = req.params;
-  const { liveScore } = req.body || { liveScore: `Manual update for match ${id}` };
+  const { liveScore } = req.body || {
+    liveScore: `Manual update for match ${id}`,
+  };
   try {
     const io = getIO();
-    if (!io) return res.status(500).send('Socket.io not initialized');
+    if (!io) return res.status(500).send("Socket.io not initialized");
     const payload = { matchId: String(id), liveScore };
-    console.log('Manual emit ballUpdate:', payload);
-    io.to(`match_${id}`).emit('ballUpdate', payload);
-    res.status(200).send('Emitted');
+    console.log("Manual emit ballUpdate:", payload);
+    io.to(`match_${id}`).emit("ballUpdate", payload);
+    res.status(200).send("Emitted");
   } catch (err) {
-    console.error('Error emitting manual update:', err);
-    res.status(500).send('Emit failed');
+    console.error("Error emitting manual update:", err);
+    res.status(500).send("Emit failed");
   }
 });
 
 // Get ball-by-ball timeline for a match
-router.get('/:id/balls', async (req, res) => {
+router.get("/:id/balls", async (req, res) => {
   const { id } = req.params;
   try {
     const q = `
@@ -273,18 +348,18 @@ router.get('/:id/balls', async (req, res) => {
       batsmanName: r.batsman_name,
       bowlerId: r.bowler_id,
       bowlerName: r.bowler_name,
-      battingTeamId: r.batting_team_id
+      battingTeamId: r.batting_team_id,
     }));
 
     res.json(rows);
   } catch (err) {
-    console.error('Error fetching balls timeline:', err);
-    res.status(500).send('Server Error');
+    console.error("Error fetching balls timeline:", err);
+    res.status(500).send("Server Error");
   }
 });
 
 // Get scorecard for a match (batting + bowling + extras per innings)
-router.get('/:id/scorecard', async (req, res) => {
+router.get("/:id/scorecard", async (req, res) => {
   const { id } = req.params;
   try {
     // Batting aggregates per batting team and batsman
@@ -364,7 +439,7 @@ router.get('/:id/scorecard', async (req, res) => {
       pool.query(dismissalsQuery, [id]),
       pool.query(bowlingQuery, [id]),
       pool.query(totalsQuery, [id]),
-      pool.query(strikerQuery, [id])
+      pool.query(strikerQuery, [id]),
     ]);
 
     const strikerMap: Record<number, number> = {};
@@ -376,18 +451,24 @@ router.get('/:id/scorecard', async (req, res) => {
     const dismissalMap: Record<string, any> = {};
     for (const r of disRes.rows) {
       const key = `${r.team_id}_${r.batsman_id}`;
-      if (!dismissalMap[key]) dismissalMap[key] = { event: r.event, bowlerName: r.bowler_name };
+      if (!dismissalMap[key])
+        dismissalMap[key] = { event: r.event, bowlerName: r.bowler_name };
     }
 
     // Group batting rows per team
     const teams: Record<number, any> = {};
     for (const r of batRes.rows) {
       const teamId = r.team_id;
-      if (!teams[teamId]) teams[teamId] = { batting: [], bowling: [], totals: null };
+      if (!teams[teamId])
+        teams[teamId] = { batting: [], bowling: [], totals: null };
       const key = `${teamId}_${r.batsman_id}`;
       const dismiss = dismissalMap[key];
       const notOut = !dismiss;
-      const dismissalText = dismiss ? (dismiss.event ? String(dismiss.event) : `b ${dismiss.bowlerName || 'Unknown'}`) : 'not out';
+      const dismissalText = dismiss
+        ? dismiss.event
+          ? String(dismiss.event)
+          : `b ${dismiss.bowlerName || "Unknown"}`
+        : "not out";
       teams[teamId].batting.push({
         playerId: r.batsman_id,
         playerName: r.batsman_name,
@@ -396,45 +477,46 @@ router.get('/:id/scorecard', async (req, res) => {
         fours: parseInt(r.fours) || 0,
         sixes: parseInt(r.sixes) || 0,
         dismissal: dismissalText,
-        notOut
-      ,
-        isStriker: strikerMap[teamId] === r.batsman_id
+        notOut,
+        isStriker: strikerMap[teamId] === r.batsman_id,
       });
     }
 
     // Attach bowling lists (note: bowling rows are grouped by batting_team_id — bowlers who bowled to that batting team)
     for (const r of bowlRes.rows) {
       const teamId = r.batting_team_id;
-      if (!teams[teamId]) teams[teamId] = { batting: [], bowling: [], totals: null };
+      if (!teams[teamId])
+        teams[teamId] = { batting: [], bowling: [], totals: null };
       teams[teamId].bowling.push({
         playerId: r.bowler_id,
         playerName: r.bowler_name,
         balls: parseInt(r.balls) || 0,
         runsConceded: parseInt(r.runs_conceded) || 0,
-        wickets: parseInt(r.wickets) || 0
+        wickets: parseInt(r.wickets) || 0,
       });
     }
 
     // Attach totals
     for (const r of totalsRes.rows) {
       const teamId = r.team_id;
-      if (!teams[teamId]) teams[teamId] = { batting: [], bowling: [], totals: null };
+      if (!teams[teamId])
+        teams[teamId] = { batting: [], bowling: [], totals: null };
       teams[teamId].totals = {
         totalRuns: parseInt(r.total_runs) || 0,
         extras: parseInt(r.extras) || 0,
         wickets: parseInt(r.wickets) || 0,
-        balls: parseInt(r.balls) || 0
+        balls: parseInt(r.balls) || 0,
       };
     }
 
     res.json({ matchId: Number(id), teams });
   } catch (err) {
-    console.error('Error fetching scorecard:', err);
-    res.status(500).send('Server Error');
+    console.error("Error fetching scorecard:", err);
+    res.status(500).send("Server Error");
   }
 });
 
-router.get('/:id/insights', async (req, res) => {
+router.get("/:id/insights", async (req, res) => {
   const { id } = req.params;
   try {
     const battingStatsQuery = `
@@ -485,7 +567,7 @@ router.get('/:id/insights', async (req, res) => {
     const [battingRes, teamTotalsRes, sixesRes] = await Promise.all([
       pool.query(battingStatsQuery, [id]),
       pool.query(teamTotalsQuery, [id]),
-      pool.query(sixesQuery, [id])
+      pool.query(sixesQuery, [id]),
     ]);
 
     const battingRows = battingRes.rows.map((r: any) => ({
@@ -495,22 +577,27 @@ router.get('/:id/insights', async (req, res) => {
       fours: parseInt(r.fours) || 0,
       sixes: parseInt(r.sixes) || 0,
       balls: parseInt(r.balls_faced) || 0,
-      battingPosition: parseInt(r.batting_position) || null
+      battingPosition: parseInt(r.batting_position) || null,
     }));
 
-    const lowOrder30Count = battingRows.filter((p: any) => p.battingPosition >= 4 && p.runs > 30).length;
+    const lowOrder30Count = battingRows.filter(
+      (p: any) => p.battingPosition >= 4 && p.runs > 30
+    ).length;
 
     const teamTotals = teamTotalsRes.rows.map((r: any) => ({
       teamId: r.team_id,
       runs: parseInt(r.runs) || 0,
-      wickets: parseInt(r.wickets) || 0
+      wickets: parseInt(r.wickets) || 0,
     }));
 
-    const totalSixes = (sixesRes.rows[0] && parseInt(sixesRes.rows[0].sixes)) || 0;
+    const totalSixes =
+      (sixesRes.rows[0] && parseInt(sixesRes.rows[0].sixes)) || 0;
 
     // Top performers
     const topScorers = battingRows.slice(0, 5);
-    const topSixHitters = battingRows.sort((a: any, b: any) => b.sixes - a.sixes).slice(0,5);
+    const topSixHitters = battingRows
+      .sort((a: any, b: any) => b.sixes - a.sixes)
+      .slice(0, 5);
 
     res.json({
       matchId: parseInt(id),
@@ -518,11 +605,11 @@ router.get('/:id/insights', async (req, res) => {
       topSixHitters,
       teamTotals,
       totalSixes,
-      lowOrder30Count
+      lowOrder30Count,
     });
   } catch (err) {
-    console.error('Error computing insights:', err);
-    res.status(500).send('Server Error');
+    console.error("Error computing insights:", err);
+    res.status(500).send("Server Error");
   }
 });
 

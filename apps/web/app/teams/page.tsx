@@ -64,10 +64,10 @@ export default function Teams() {
             {teams.map((team, index) => (
               <div
                 key={team.id}
-                className="group bg-white rounded-xl shadow-md hover:shadow-2xl transition-all duration-300 overflow-hidden transform hover:-translate-y-2 cursor-pointer"
+                className="group bg-white rounded-xl shadow-md hover:shadow-2xl transition-all duration-300 overflow-hidden transform hover:-translate-y-2"
               >
                 {/* Team Header with Gradient */}
-                <div className={`h-32 bg-gradient-to-br ${teamColors[index % teamColors.length]} flex items-center justify-center relative`}>
+                <div className={`h-32 bg-linear-to-br ${teamColors[index % teamColors.length]} flex items-center justify-center relative`}>
                   <div className="absolute inset-0 bg-black opacity-0 group-hover:opacity-10 transition-opacity duration-300"></div>
                   <div className="relative z-10 text-center">
                     <div className="w-20 h-20 bg-white rounded-full flex items-center justify-center shadow-lg mb-2 mx-auto">
@@ -92,7 +92,7 @@ export default function Teams() {
                   </div>
 
                   {/* Action Button */}
-                  <button className="mt-6 w-full bg-gradient-to-r from-teal-600 to-teal-700 text-white py-2 px-4 rounded-lg font-semibold hover:from-teal-700 hover:to-teal-800 transition-all duration-200 transform group-hover:scale-105">
+                  <button className="mt-6 w-full bg-linear-to-r from-teal-600 to-teal-700 text-white py-2 px-4 rounded-lg font-semibold hover:from-teal-700 hover:to-teal-800 transition-all duration-200 transform group-hover:scale-105 cursor-pointer">
                     View Details
                   </button>
                 </div>
