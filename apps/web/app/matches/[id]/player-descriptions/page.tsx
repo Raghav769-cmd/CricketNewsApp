@@ -66,45 +66,45 @@ export default function PlayerDescriptionsPage() {
   }
 
   return (
-    <div className="p-6 max-w-3xl mx-auto">
-      <h2 className="text-2xl font-semibold mb-4">Player Performance Notes</h2>
+    <div className="p-6 max-w-3xl mx-auto min-h-screen bg-black">
+      <h2 className="text-2xl font-semibold mb-4 text-white">Player Performance Notes</h2>
 
-      <form onSubmit={handleSave} className="space-y-4 bg-white p-4 rounded shadow">
+      <form onSubmit={handleSave} className="space-y-4 bg-slate-900 p-4 rounded shadow border border-slate-800">
         <div>
-          <label className="block text-sm font-medium text-gray-700">Player</label>
-          <select className="mt-1 p-2 w-full border rounded" value={selectedPlayer} onChange={(e) => setSelectedPlayer(Number(e.target.value) || '')}>
+          <label className="block text-sm font-medium text-gray-300">Player</label>
+          <select className="mt-1 p-2 w-full border border-slate-700 rounded bg-slate-800 text-white focus:ring-2 focus:ring-lime-500" value={selectedPlayer} onChange={(e) => setSelectedPlayer(Number(e.target.value) || '')}>
             <option value="">Select player</option>
             {players.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700">Author (optional)</label>
-          <input className="mt-1 w-full p-2 border rounded" value={author} onChange={(e) => setAuthor(e.target.value)} />
+          <label className="block text-sm font-medium text-gray-300">Author (optional)</label>
+          <input className="mt-1 w-full p-2 border border-slate-700 rounded bg-slate-800 text-white focus:ring-2 focus:ring-lime-500" value={author} onChange={(e) => setAuthor(e.target.value)} />
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700">Description</label>
-          <textarea rows={5} className="mt-1 w-full p-2 border rounded" value={text} onChange={(e) => setText(e.target.value)} />
+          <label className="block text-sm font-medium text-gray-300">Description</label>
+          <textarea rows={5} className="mt-1 w-full p-2 border border-slate-700 rounded bg-slate-800 text-white focus:ring-2 focus:ring-lime-500" value={text} onChange={(e) => setText(e.target.value)} />
         </div>
 
         <div className="flex gap-2">
-          <button className="px-4 py-2 bg-blue-600 text-white rounded" disabled={loading}>{loading ? 'Saving...' : 'Save'}</button>
-          <button type="button" className="px-4 py-2 border rounded" onClick={() => { setSelectedPlayer(''); setText(''); setAuthor(''); }}>Clear</button>
+          <button className="px-4 py-2 bg-linear-to-r from-lime-500 to-lime-600 text-black rounded font-semibold hover:from-lime-600 hover:to-lime-700" disabled={loading}>{loading ? 'Saving...' : 'Save'}</button>
+          <button type="button" className="px-4 py-2 border border-slate-700 text-gray-300 rounded hover:bg-slate-800" onClick={() => { setSelectedPlayer(''); setText(''); setAuthor(''); }}>Clear</button>
         </div>
       </form>
 
       <div className="mt-6">
-        <h3 className="text-lg font-medium mb-2">Saved notes</h3>
-        {descriptions.length === 0 && <p className="text-sm text-gray-600">No notes yet for this match.</p>}
+        <h3 className="text-lg font-medium mb-2 text-white">Saved notes</h3>
+        {descriptions.length === 0 && <p className="text-sm text-gray-400">No notes yet for this match.</p>}
         <ul className="space-y-4">
           {descriptions.map(d => (
-            <li key={d.id} className="p-3 bg-white rounded shadow">
+            <li key={d.id} className="p-3 bg-slate-900 rounded shadow border border-slate-800">
               <div className="flex justify-between items-baseline">
-                <div className="font-medium">{d.player_name ?? `Player ${d.player_id}`}</div>
+                <div className="font-medium text-white">{d.player_name ?? `Player ${d.player_id}`}</div>
                 <div className="text-xs text-gray-500">{d.updated_at ? new Date(d.updated_at).toLocaleString() : ''}</div>
               </div>
-              <div className="text-sm text-gray-700 mt-2 whitespace-pre-wrap">{d.description}</div>
+              <div className="text-sm text-gray-300 mt-2 whitespace-pre-wrap">{d.description}</div>
               {d.author && <div className="text-xs text-gray-500 mt-2">— {d.author}</div>}
             </li>
           ))}

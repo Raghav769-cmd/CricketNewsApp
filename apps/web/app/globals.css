@@ -2,27 +2,48 @@
 
 @layer base {
   :root {
-    --cricket-primary: #0f766e;
-    --cricket-primary-dark: #134e4a;
-    --cricket-secondary: #f97316;
-    --cricket-accent: #8b5cf6;
-    --cricket-live: #16a34a;
-    --cricket-bg: #f8fafc;
-    --cricket-card: #ffffff;
-    --cricket-border: #e2e8f0;
+    --color-black: #141414;
+    --color-dark-teal: #003c3c;
+    --color-lime-green: #a0f000;
+    --color-msu-green: #143c3c;
+    --color-white: #ffffff;
+    --cricket-primary: #003c3c;
+    --cricket-primary-dark: #000000;
+    --cricket-secondary: #a0f000;
+    --cricket-accent: #143c3c;
+    --cricket-live: #a0f000;
+    --cricket-bg: #141414;
+    --cricket-card: #1a1a1a;
+    --cricket-border: #003c3c;
   }
   
   body {
-    @apply bg-slate-50 text-gray-900;
+    @apply bg-slate-950 text-gray-100 antialiased;
   }
 }
 
 @layer utilities {
   .gradient-primary {
-    background: linear-gradient(135deg, #0f766e 0%, #14b8a6 100%);
+    background: linear-gradient(135deg, #003c3c 0%, #143c3c 100%);
+  }
+  
+  .gradient-secondary {
+    background: linear-gradient(135deg, #a0f000 0%, #b8ff1f 100%);
   }
   
   .gradient-card {
-    background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+    background: linear-gradient(135deg, #1a1a1a 0%, #141414 100%);
+  }
+  
+  .gradient-dark {
+    background: linear-gradient(135deg, #000000 0%, #003c3c 100%);
+  }
+  
+  .card-shadow {
+    box-shadow: 0 4px 6px -1px rgba(160, 240, 0, 0.15), 0 2px 4px -1px rgba(0, 60, 60, 0.1);
+  }
+  
+  .card-shadow-hover {
+    box-shadow: 0 20px 25px -5px rgba(160, 240, 0, 0.2), 0 10px 10px -5px rgba(0, 60, 60, 0.15);
   }
 }
