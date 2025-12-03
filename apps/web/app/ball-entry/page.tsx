@@ -15,8 +15,10 @@ interface Team {
 
 interface Match {
   id: number;
-  team1: string;
-  team2: string;
+  team1: number | string;
+  team2: number | string;
+  team1_name?: string;
+  team2_name?: string;
   status: string;
   team1_id: number;
   team2_id: number;
@@ -24,6 +26,7 @@ interface Match {
 
 export default function BallEntry() {
   const [matches, setMatches] = useState<Match[]>([]);
+  const [matchesLoaded, setMatchesLoaded] = useState<boolean>(false);
   const [players, setPlayers] = useState<Player[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
   const [selectedMatch, setSelectedMatch] = useState<number>(0);
@@ -77,6 +80,10 @@ export default function BallEntry() {
       const normalized: Match[] = data.map((m: any) => ({
         ...m,
         id: Number(m.id),
+        team1: m.team1,
+        team2: m.team2,
+        team1_name: m.team1_name || m.team1_name,
+        team2_name: m.team2_name || m.team2_name,
         team1_id: Number(m.team1_id),
         team2_id: Number(m.team2_id),
       }));
@@ -84,6 +91,8 @@ export default function BallEntry() {
       setMatches(normalized);
     } catch (error) {
       console.error("Error fetching matches:", error);
+    } finally {
+      setMatchesLoaded(true);
     }
   };
 
@@ -240,7 +249,20 @@ export default function BallEntry() {
             </div>
           )}
 
-          <div className="grid lg:grid-cols-3 gap-6">
+          {matchesLoaded && matches.length === 0 && (
+            <div className="flex items-center justify-center py-20">
+              <div className="bg-white rounded-xl shadow-md p-10 text-center max-w-xl w-full">
+                <div className="text-6xl mb-4">🏏</div>
+                <h2 className="text-2xl font-bold mb-2 text-gray-800">No matches available</h2>
+                <p className="text-gray-600 mb-6">There are currently no scheduled matches. Create a new match from the Matches page to start live scoring.</p>
+                <div className="flex justify-center">
+                  <a href="/matches" className="px-5 py-2 bg-linear-to-r from-teal-600 to-teal-700 text-white rounded-lg font-semibold">Go to Matches</a>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className={`${matchesLoaded && matches.length === 0 ? 'hidden' : ''} grid lg:grid-cols-3 gap-6`}>
             {/* Main Form */}
             <div className="lg:col-span-2">
               <form
@@ -262,7 +284,7 @@ export default function BallEntry() {
                       <option value={0}>Select Match</option>
                       {matches.map((match) => (
                         <option key={match.id} value={match.id}>
-                          Match {match.id}: {match.team1} vs {match.team2}
+                          Match {match.id}: {match.team1_name || match.team1} vs {match.team2_name || match.team2}
                         </option>
                       ))}
                     </select>
@@ -559,8 +581,8 @@ export default function BallEntry() {
                         Selected Match
                       </div>
                       <div className="font-semibold text-gray-800">
-                        {matches.find((m) => m.id === selectedMatch)?.team1} vs{" "}
-                        {matches.find((m) => m.id === selectedMatch)?.team2}
+                        {matches.find((m) => m.id === selectedMatch)?.team1_name || matches.find((m) => m.id === selectedMatch)?.team1} vs{" "}
+                        {matches.find((m) => m.id === selectedMatch)?.team2_name || matches.find((m) => m.id === selectedMatch)?.team2}
                       </div>
                     </div>
                   )}

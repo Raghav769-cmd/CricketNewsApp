@@ -114,6 +114,17 @@ export default function MatchDetailPage() {
     return `${displayOver}.${displayBall}`;
   };
 
+  // Helper to resolve a team id to the team name
+  const getTeamName = (teamId?: number | null) => {
+    if (!match) {
+      return teamId != null ? `Team ${teamId}` : 'Team';
+    }
+    const tId = String(teamId ?? '');
+    if (String(match.team1) === tId || String((match as any).team1_id) === tId) return (match as any).team1_name || String(match.team1);
+    if (String(match.team2) === tId || String((match as any).team2_id) === tId) return (match as any).team2_name || String(match.team2);
+    return teamId != null ? `Team ${teamId}` : 'Team';
+  };
+
   const renderDescriptions = (ins: Insights | null) => {
     if (!ins) return [] as string[];
     const lines: string[] = [];
@@ -124,7 +135,9 @@ export default function MatchDetailPage() {
     if (ins.lowOrder30Count && ins.lowOrder30Count > 0) lines.push(`${ins.lowOrder30Count} low-order player(s) crossed 30.`);
     lines.push(`Total sixes: ${ins.totalSixes}.`);
     if (ins.teamTotals && ins.teamTotals.length) {
-      const teamSummaries = ins.teamTotals.map(t => `Team ${t.teamId} ${t.runs}/${t.wickets}`).join(' — ');
+      const teamSummaries = ins.teamTotals
+        .map(t => `${getTeamName(t.teamId)} ${t.runs}/${t.wickets}`)
+        .join(' — ');
       lines.push(teamSummaries + '.');
     }
     return lines;
@@ -183,7 +196,7 @@ export default function MatchDetailPage() {
               <div className="flex justify-between items-start mb-4">
                 <div>
                   <h1 className="text-3xl font-bold mb-2">
-                    {match ? `${match.team1} vs ${match.team2}` : `Match ${matchId}`}
+                    {match ? `${match.team1_name || match.team1} vs ${match.team2_name || match.team2}` : `Match ${matchId}`}
                   </h1>
                   <div className="flex items-center space-x-4 text-teal-50 text-sm">
                     <span className="flex items-center">
@@ -206,7 +219,7 @@ export default function MatchDetailPage() {
                   <div className="grid md:grid-cols-2 gap-4 mt-6">
                     {score.scores.map((s: TeamScore, idx: number) => (
                       <div key={s.teamId} className="bg-white bg-opacity-20 backdrop-blur-sm rounded-lg p-4">
-                        <div className="text-teal-900 text-sm mb-1">Team {s.teamId}</div>
+                        <div className="text-teal-900 text-sm mb-1">{getTeamName(s.teamId)}</div>
                         <div className="flex justify-between items-end">
                           <div className="text-4xl text-teal-800 font-bold">{s.runs}/{s.wickets}</div>
                           <div className="text-teal-900">({s.overs} ov)</div>
