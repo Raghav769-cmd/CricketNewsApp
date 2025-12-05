@@ -1,6 +1,12 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/context/AuthContext";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import { FormField } from "@/app/components/FormComponents";
 
 interface Player {
   id: number;
@@ -12,6 +18,23 @@ interface Team {
   id: number;
   name: string;
 }
+
+const ballEntrySchema = z.object({
+  selectedMatch: z.number().min(1, 'Match is required'),
+  battingTeamId: z.number().min(1, 'Batting team is required'),
+  overNumber: z.number().min(0, 'Over number must be 0 or more').max(50, 'Over number must be 50 or less'),
+  ballNumber: z.number().min(0, 'Ball must be 0 or more').max(5, 'Ball must be 5 or less'),
+  runs: z.number().min(0, 'Runs must be 0 or more').max(6, 'Runs cannot exceed 6'),
+  extras: z.string(),
+  extraType: z.string(),
+  wicket: z.boolean(),
+  strikerId: z.number(),
+  nonStrikerId: z.number(),
+  bowlerId: z.number().min(1, 'Bowler is required'),
+  eventText: z.string(),
+});
+
+type BallEntryFormData = z.infer<typeof ballEntrySchema>;
 
 interface Match {
   id: number;
@@ -25,24 +48,73 @@ interface Match {
 }
 
 export default function BallEntry() {
+  const router = useRouter();
+  const { user, isAuthenticated, token, loading: authLoading } = useAuth();
+  
   const [matches, setMatches] = useState<Match[]>([]);
   const [matchesLoaded, setMatchesLoaded] = useState<boolean>(false);
   const [players, setPlayers] = useState<Player[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
-  const [selectedMatch, setSelectedMatch] = useState<number>(0);
-  const [battingTeamId, setBattingTeamId] = useState<number>(0);
-  const [overNumber, setOverNumber] = useState<number>(0);
-  const [ballNumber, setBallNumber] = useState<number>(0);
-  const [runs, setRuns] = useState<number>(0);
-  const [extras, setExtras] = useState<string>("0");
-  const [extraType, setExtraType] = useState<string>("none");
-  const [wicket, setWicket] = useState<boolean>(false);
-  const [strikerId, setStrikerId] = useState<number>(0);
-  const [nonStrikerId, setNonStrikerId] = useState<number>(0);
-  const [bowlerId, setBowlerId] = useState<number>(0);
-  const [eventText, setEventText] = useState<string>("");
-  const [loading, setLoading] = useState<boolean>(false);
   const [message, setMessage] = useState<string>("");
+  
+  const {
+    register,
+    handleSubmit,
+    watch,
+    setValue,
+    formState: { errors, isSubmitting },
+  } = useForm<BallEntryFormData>({
+    resolver: zodResolver(ballEntrySchema),
+    defaultValues: {
+      selectedMatch: 0,
+      battingTeamId: 0,
+      overNumber: 0,
+      ballNumber: 0,
+      runs: 0,
+      extras: "0",
+      extraType: "none",
+      wicket: false,
+      strikerId: 0,
+      nonStrikerId: 0,
+      bowlerId: 0,
+      eventText: "",
+    },
+  });
+
+  const selectedMatch = watch('selectedMatch');
+  const battingTeamId = watch('battingTeamId');
+  const strikerId = watch('strikerId');
+  const nonStrikerId = watch('nonStrikerId');
+  const bowlerId = watch('bowlerId');
+  const overNumber = watch('overNumber');
+  const ballNumber = watch('ballNumber');
+  const runs = watch('runs');
+  const extraType = watch('extraType');
+  const wicket = watch('wicket');
+  const eventText = watch('eventText');
+
+  // Redirect to login if not authenticated or not admin (superadmin not allowed)
+  useEffect(() => {
+    if (!authLoading && (!isAuthenticated || user?.role !== 'admin')) {
+      router.push("/login");
+    }
+  }, [isAuthenticated, authLoading, user?.role, router]);
+
+  // Show loading while checking authentication
+  if (authLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
+          <p>Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return null;
+  }
 
   const selectedMatchObj = matches.find((m) => m.id === selectedMatch);
 
@@ -56,11 +128,11 @@ export default function BallEntry() {
   );
 
   useEffect(() => {
-    setBattingTeamId(0);
-    setStrikerId(0);
-    setNonStrikerId(0);
-    setBowlerId(0);
-  }, [selectedMatch]);
+    setValue('battingTeamId', 0);
+    setValue('strikerId', 0);
+    setValue('nonStrikerId', 0);
+    setValue('bowlerId', 0);
+  }, [selectedMatch, setValue]);
 
   useEffect(() => {
     fetchMatches();
@@ -131,95 +203,83 @@ export default function BallEntry() {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-
-    const needsBatsman = extraType === "none";
-    if (
-      !selectedMatch ||
-      !battingTeamId ||
-      !bowlerId ||
-      (needsBatsman && !strikerId)
-    ) {
-      setMessage("Please fill all required fields (striker must be selected)");
+  const onSubmit = async (data: BallEntryFormData) => {
+    const needsBatsman = data.extraType === "none";
+    if (needsBatsman && !data.strikerId) {
+      setMessage("Please select a striker for regular deliveries");
       return;
     }
 
-    setLoading(true);
     setMessage("");
 
     try {
-      const overToSend = overNumber + 1;
-      const ballToSend = ballNumber + 1;
+      const overToSend = data.overNumber + 1;
+      const ballToSend = data.ballNumber + 1;
 
-      const url = `${apiBase}/api/matches/${selectedMatch}/ball`;
+      const url = `${apiBase}/api/matches/${data.selectedMatch}/ball`;
       const response = await fetch(url, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`,
         },
         body: JSON.stringify({
           overNumber: overToSend,
           ballNumber: ballToSend,
-          runs,
-          extras,
-          extraType,
-          wicket,
-          is_wicket: wicket,
+          runs: data.runs,
+          extras: data.extras,
+          extraType: data.extraType,
+          wicket: data.wicket,
+          is_wicket: data.wicket,
           event:
-            eventText && eventText.trim().length > 0
-              ? eventText.trim()
-              : extraType !== "none"
-                ? extraType
+            data.eventText && data.eventText.trim().length > 0
+              ? data.eventText.trim()
+              : data.extraType !== "none"
+                ? data.extraType
                 : null,
-          batsmanId: strikerId || null,
-          nonStrikerId: nonStrikerId || null,
-          bowlerId,
-          battingTeamId,
+          batsmanId: data.strikerId || null,
+          nonStrikerId: data.nonStrikerId || null,
+          bowlerId: data.bowlerId,
+          battingTeamId: data.battingTeamId,
         }),
       });
 
       if (response.ok) {
         setMessage("✅ Ball added successfully!");
-        const illegal = /^(wide|wd|no-?ball|nb)$/i.test(extraType);
-        const ballToSend2 = ballNumber + 1; // local for logic
-        const isOddRun = runs === 1 || runs === 3 || runs === 5;
+        const illegal = /^(wide|wd|no-?ball|nb)$/i.test(data.extraType);
+        const ballToSend2 = data.ballNumber + 1;
+        const isOddRun = data.runs === 1 || data.runs === 3 || data.runs === 5;
 
         if (!illegal) {
           if (ballToSend2 === 6) {
-            // last ball of over
-            // If single is taken on last ball, do NOT swap batters (per requirement)
-            if (runs !== 1) {
-              const tmp = strikerId;
-              setStrikerId(nonStrikerId);
-              setNonStrikerId(tmp);
+            if (data.runs !== 1) {
+              const tmp = data.strikerId;
+              setValue('strikerId', data.nonStrikerId);
+              setValue('nonStrikerId', tmp);
             }
-            setOverNumber(overNumber + 1);
-            setBallNumber(0);
+            setValue('overNumber', data.overNumber + 1);
+            setValue('ballNumber', 0);
           } else {
-            // not last ball
             if (isOddRun) {
-              const tmp = strikerId;
-              setStrikerId(nonStrikerId);
-              setNonStrikerId(tmp);
+              const tmp = data.strikerId;
+              setValue('strikerId', data.nonStrikerId);
+              setValue('nonStrikerId', tmp);
             }
-            setBallNumber(ballNumber + 1);
+            setValue('ballNumber', data.ballNumber + 1);
           }
         }
 
-        setRuns(0);
-        setExtras("0");
-        setWicket(false);
-        setEventText("");
-        setExtraType("none");
+        setValue('runs', 0);
+        setValue('extras', "0");
+        setValue('wicket', false);
+        setValue('eventText', "");
+        setValue('extraType', "none");
       } else {
         setMessage("❌ Failed to add ball");
       }
     } catch (error) {
       console.error("Error adding ball:", error);
       setMessage("❌ Error occurred");
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -276,20 +336,17 @@ export default function BallEntry() {
             {/* Main Form */}
             <div className="lg:col-span-2">
               <form
-                onSubmit={handleSubmit}
+                onSubmit={handleSubmit(onSubmit)}
                 className="bg-slate-900 rounded-xl border border-slate-800 shadow-sm p-6 space-y-6"
               >
                 {/* Match and Team Selection */}
                 <div className="grid md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-300 mb-2">
-                      Match
-                    </label>
+                  <FormField label="Match" required error={errors.selectedMatch?.message}>
                     <select
-                      value={selectedMatch}
-                      onChange={(e) => setSelectedMatch(Number(e.target.value))}
-                      className="w-full p-3 border-2 border-slate-700 rounded-lg focus:ring-2 focus:ring-lime-500 focus:border-lime-500 transition-all bg-slate-800 text-white"
-                      required
+                      {...register('selectedMatch', { valueAsNumber: true })}
+                      className={`w-full p-3 border-2 rounded-lg focus:ring-2 focus:ring-lime-500 focus:border-lime-500 transition-all bg-slate-800 text-white ${
+                        errors.selectedMatch ? 'border-red-500' : 'border-slate-700'
+                      }`}
                     >
                       <option value={0}>Select Match</option>
                       {matches.map((match) => (
@@ -298,20 +355,17 @@ export default function BallEntry() {
                         </option>
                       ))}
                     </select>
-                  </div>
+                  </FormField>
 
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-300 mb-2">
-                      Batting Team
-                    </label>
+                  <FormField label="Batting Team" required error={errors.battingTeamId?.message}>
                     <select
-                      value={battingTeamId}
-                      onChange={(e) => setBattingTeamId(Number(e.target.value))}
-                      className="w-full p-3 border-2 border-slate-700 rounded-lg focus:ring-2 focus:ring-lime-500 focus:border-lime-500 transition-all bg-slate-800 text-white"
-                      required
+                      {...register('battingTeamId', { valueAsNumber: true })}
+                      className={`w-full p-3 border-2 rounded-lg focus:ring-2 focus:ring-lime-500 focus:border-lime-500 transition-all bg-slate-800 text-white ${
+                        errors.battingTeamId ? 'border-red-500' : 'border-slate-700'
+                      }`}
                     >
                       <option value={0}>Select Batting Team</option>
-                      {selectedMatchObj &&
+                      {selectedMatch > 0 &&
                         teams
                           .filter((t) => matchTeamIds.includes(t.id))
                           .map((team) => (
@@ -320,7 +374,7 @@ export default function BallEntry() {
                             </option>
                           ))}
                     </select>
-                  </div>
+                  </FormField>
                 </div>
 
                 {/* Over Information */}
@@ -329,36 +383,28 @@ export default function BallEntry() {
                     Over Information
                   </h3>
                   <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-300 mb-2">
-                        Over Number (0-based)
-                      </label>
+                    <FormField label="Over Number (0-based)" error={errors.overNumber?.message} helperText="0 = 1st over">
                       <input
                         type="number"
-                        value={overNumber}
-                        onChange={(e) => setOverNumber(Number(e.target.value))}
+                        {...register('overNumber', { valueAsNumber: true })}
                         min={0}
                         max={50}
-                        className="w-full p-3 border-2 border-lime-500/30 rounded-lg focus:ring-2 focus:ring-lime-500 focus:border-lime-500 bg-slate-800 text-white"
-                        required
+                        className={`w-full p-3 border-2 rounded-lg focus:ring-2 focus:ring-lime-500 focus:border-lime-500 bg-slate-800 text-white ${
+                          errors.overNumber ? 'border-red-500' : 'border-lime-500/30'
+                        }`}
                       />
-                      <p className="text-xs text-gray-400 mt-1">0 = 1st over</p>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-300 mb-2">
-                        Ball Number (0-5)
-                      </label>
+                    </FormField>
+                    <FormField label="Ball Number (0-5)" error={errors.ballNumber?.message} helperText="0 = 1st ball">
                       <input
                         type="number"
-                        value={ballNumber}
-                        onChange={(e) => setBallNumber(Number(e.target.value))}
+                        {...register('ballNumber', { valueAsNumber: true })}
                         min={0}
                         max={5}
-                        className="w-full p-3 border-2 border-slate-700 rounded-lg focus:ring-2 focus:ring-lime-500 bg-slate-800 text-white"
-                        required
+                        className={`w-full p-3 border-2 rounded-lg focus:ring-2 focus:ring-lime-500 bg-slate-800 text-white ${
+                          errors.ballNumber ? 'border-red-500' : 'border-slate-700'
+                        }`}
                       />
-                      <p className="text-xs text-gray-400 mt-1">0 = 1st ball</p>
-                    </div>
+                    </FormField>
                   </div>
                 </div>
 
@@ -374,8 +420,8 @@ export default function BallEntry() {
                         type="button"
                         onClick={() => {
                           const temp = strikerId;
-                          setStrikerId(nonStrikerId);
-                          setNonStrikerId(temp);
+                          setValue('strikerId', nonStrikerId);
+                          setValue('nonStrikerId', temp);
                         }}
                         className="text-xs bg-linear-to-r from-cyan-500 to-cyan-600 hover:from-cyan-600 hover:to-cyan-700 text-white px-4 py-2 rounded-lg font-semibold transition-colors shadow-sm flex items-center space-x-1"
                       >
@@ -386,24 +432,23 @@ export default function BallEntry() {
                       </button>
                     </div>
                     <select
-                      value={strikerId}
-                      onChange={(e) => setStrikerId(Number(e.target.value))}
-                      className="w-full p-3 border border-cyan-500 rounded-lg focus:ring-2 focus:ring-cyan-500 bg-slate-800 text-white"
-                      required={extraType === "none"}
+                      {...register('strikerId', { valueAsNumber: true })}
+                      className={`w-full p-3 border rounded-lg focus:ring-2 focus:ring-cyan-500 bg-slate-800 text-white ${
+                        errors.strikerId ? 'border-red-500' : 'border-cyan-500'
+                      }`}
                     >
                       <option value={0}>Select Striker</option>
                       {playersInMatch
-                        .filter(
-                          (p) =>
-                            battingTeamId === 0 || p.team_id === battingTeamId
-                        )
-                        .filter((p) => p.id !== nonStrikerId)
+                        .filter((p) => p.team_id === battingTeamId && p.id !== nonStrikerId)
                         .map((player) => (
                           <option key={player.id} value={player.id}>
                             {player.name}
                           </option>
                         ))}
                     </select>
+                    {errors.strikerId && extraType === 'none' && (
+                      <p className="text-xs text-red-400 mt-2">{errors.strikerId.message}</p>
+                    )}
                   </div>
 
                   <div className="bg-linear-to-r from-amber-500/20 to-amber-600/20 rounded-lg p-4 border border-amber-500">
@@ -412,17 +457,12 @@ export default function BallEntry() {
                       Non-Striker
                     </label>
                     <select
-                      value={nonStrikerId}
-                      onChange={(e) => setNonStrikerId(Number(e.target.value))}
+                      {...register('nonStrikerId', { valueAsNumber: true })}
                       className="w-full p-3 border border-amber-500 rounded-lg focus:ring-2 focus:ring-amber-500 bg-slate-800 text-white"
                     >
                       <option value={0}>Select Non-Striker</option>
                       {playersInMatch
-                        .filter(
-                          (p) =>
-                            battingTeamId === 0 || p.team_id === battingTeamId
-                        )
-                        .filter((p) => p.id !== strikerId)
+                        .filter((p) => p.team_id === battingTeamId && p.id !== strikerId)
                         .map((player) => (
                           <option key={player.id} value={player.id}>
                             {player.name}
@@ -433,29 +473,23 @@ export default function BallEntry() {
                 </div>
 
                 {/* Bowler Selection */}
-                <div>
-                  <label className="block text-sm font-semibold text-gray-300 mb-2">
-                    Bowler
-                  </label>
+                <FormField label="Bowler" required error={errors.bowlerId?.message}>
                   <select
-                    value={bowlerId}
-                    onChange={(e) => setBowlerId(Number(e.target.value))}
-                    className="w-full p-3 border-2 border-slate-700 rounded-lg focus:ring-2 focus:ring-lime-500 bg-slate-800 text-white"
-                    required
+                    {...register('bowlerId', { valueAsNumber: true })}
+                    className={`w-full p-3 border-2 rounded-lg focus:ring-2 focus:ring-lime-500 bg-slate-800 text-white ${
+                      errors.bowlerId ? 'border-red-500' : 'border-slate-700'
+                    }`}
                   >
                     <option value={0}>Select Bowler</option>
                     {playersInMatch
-                      .filter(
-                        (p) =>
-                          battingTeamId === 0 || p.team_id !== battingTeamId
-                      )
+                      .filter((p) => p.team_id !== battingTeamId)
                       .map((player) => (
                         <option key={player.id} value={player.id}>
                           {player.name}
                         </option>
                       ))}
                   </select>
-                </div>
+                </FormField>
 
                 {/* Runs and Extras */}
                 <div className="bg-slate-800/50 rounded-lg p-4 border border-slate-700">
@@ -472,7 +506,7 @@ export default function BallEntry() {
                           <button
                             key={run}
                             type="button"
-                            onClick={() => setRuns(run)}
+                            onClick={() => setValue('runs', run)}
                             className={`p-3 rounded-lg font-bold transition-all ${
                               runs === run
                                 ? run === 6
@@ -496,14 +530,12 @@ export default function BallEntry() {
                       <div className="flex gap-2">
                         <input
                           type="text"
-                          value={extras}
-                          onChange={(e) => setExtras(e.target.value)}
+                          {...register('extras')}
                           className="w-1/3 p-3 border-2 border-slate-700 rounded-lg focus:ring-2 focus:ring-lime-500 bg-slate-800 text-white"
                           placeholder="0"
                         />
                         <select
-                          value={extraType}
-                          onChange={(e) => setExtraType(e.target.value)}
+                          {...register('extraType')}
                           className="flex-1 p-3 border-2 border-slate-700 rounded-lg focus:ring-2 focus:ring-lime-500 bg-slate-800 text-white"
                         >
                           <option value="none">No Extra</option>
@@ -522,8 +554,7 @@ export default function BallEntry() {
                   <div className="flex items-center p-4 bg-red-500/20 border border-red-500 rounded-lg">
                     <input
                       type="checkbox"
-                      checked={wicket}
-                      onChange={(e) => setWicket(e.target.checked)}
+                      {...register('wicket')}
                       className="w-5 h-5 text-red-500 border-slate-700 rounded focus:ring-red-500 bg-slate-800"
                       id="wicket-checkbox"
                     />
@@ -535,30 +566,25 @@ export default function BallEntry() {
                     </label>
                   </div>
 
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-300 mb-2">
-                      Event Description (Optional)
-                    </label>
+                  <FormField label="Event Description (Optional)" error={errors.eventText?.message} helperText="Add a commentary note for this delivery">
                     <input
                       type="text"
-                      value={eventText}
-                      onChange={(e) => setEventText(e.target.value)}
+                      {...register('eventText')}
                       placeholder="e.g., Brilliant cover drive! 4 runs"
-                      className="w-full p-3 border-2 border-slate-700 rounded-lg focus:ring-2 focus:ring-lime-500 bg-slate-800 text-white"
+                      className={`w-full p-3 border-2 rounded-lg focus:ring-2 focus:ring-lime-500 bg-slate-800 text-white ${
+                        errors.eventText ? 'border-red-500' : 'border-slate-700'
+                      }`}
                     />
-                    <p className="text-xs text-gray-500 mt-2">
-                      Add a commentary note for this delivery
-                    </p>
-                  </div>
+                  </FormField>
                 </div>
 
                 {/* Submit Button */}
                 <button
                   type="submit"
-                  disabled={loading}
+                  disabled={isSubmitting}
                   className="w-full bg-linear-to-r from-lime-500 to-lime-600 hover:from-lime-600 hover:to-lime-700 text-black py-4 px-6 rounded-lg font-bold text-lg shadow-lg hover:shadow-xl disabled:from-gray-500 disabled:to-gray-600 disabled:cursor-not-allowed transition-all duration-200"
                 >
-                  {loading ? (
+                  {isSubmitting ? (
                     <span className="flex items-center justify-center">
                       <span className="animate-spin rounded-full h-5 w-5 border-2 border-black border-t-transparent mr-3"></span>
                       Adding Ball...

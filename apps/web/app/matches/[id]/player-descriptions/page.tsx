@@ -1,13 +1,17 @@
 "use client";
 
 import { useEffect, useState } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
+import { useAuth } from '@/context/AuthContext';
+import { toast } from '@repo/ui/toast';
 
 interface Player { id: number; name: string; team_id?: number }
 interface DescriptionRow { id: number; match_id: number; player_id: number; player_name?: string; description: string; author?: string; updated_at?: string }
 
 export default function PlayerDescriptionsPage() {
   const params = useParams() as { id?: string } | null;
+  const router = useRouter();
+  const { user, isAuthenticated, loading: authLoading } = useAuth();
   const matchId = params?.id;
   const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
@@ -17,6 +21,30 @@ export default function PlayerDescriptionsPage() {
   const [text, setText] = useState<string>('');
   const [author, setAuthor] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
+
+  // Redirect to login if not authenticated or not admin
+  useEffect(() => {
+    if (!authLoading && (!isAuthenticated || user?.role !== 'admin')) {
+      router.push("/login");
+    }
+  }, [isAuthenticated, authLoading, user?.role, router]);
+
+  // Show loading while checking authentication
+  if (authLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-black">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
+          <p className="text-white">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Don't render if not authenticated or not admin
+  if (!isAuthenticated || user?.role !== 'admin') {
+    return null;
+  }
 
   useEffect(() => { fetchPlayers(); }, []);
   useEffect(() => { if (matchId) fetchDescriptions(); }, [matchId]);
@@ -44,9 +72,18 @@ export default function PlayerDescriptionsPage() {
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
-    if (!matchId) return alert('Missing match id');
-    if (!selectedPlayer) return alert('Select a player');
-    if (!text || text.trim().length === 0) return alert('Enter description');
+    if (!matchId) {
+      toast.error('Missing match id');
+      return;
+    }
+    if (!selectedPlayer) {
+      toast.error('Select a player');
+      return;
+    }
+    if (!text || text.trim().length === 0) {
+      toast.error('Enter description');
+      return;
+    }
     setLoading(true);
     try {
       const res = await fetch(`${apiBase}/api/matches/${matchId}/players/${selectedPlayer}/description`, {
@@ -58,11 +95,13 @@ export default function PlayerDescriptionsPage() {
       await fetchDescriptions();
       setText('');
       setAuthor('');
-      alert('Saved');
+      toast.success('Description saved successfully!');
     } catch (err) {
       console.error(err);
-      alert('Save failed');
-    } finally { setLoading(false); }
+      toast.error('Failed to save description');
+    } finally { 
+      setLoading(false); 
+    }
   }
 
   return (

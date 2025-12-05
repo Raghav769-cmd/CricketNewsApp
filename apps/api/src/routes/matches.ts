@@ -1,6 +1,7 @@
 import { Router } from "express";
 import pool from "../db/connection.js";
 import { getIO } from "../server.ts";
+import { verifyToken, isSuperadmin, isAdmin, isAuthenticated } from "../middleware/auth.ts";
 
 const router: Router = Router();
 
@@ -52,8 +53,8 @@ router.get("/:id", async (req, res) => {
   }
 });
 
-// Add match
-router.post("/", async (req, res) => {
+// Add match - Superadmin only
+router.post("/", verifyToken, isSuperadmin, async (req, res) => {
   const { team1, team2, date, venue, score } = req.body;
   try {
     const result = await pool.query(
@@ -86,8 +87,8 @@ router.put("/:id", async (req, res) => {
   }
 });
 
-// Delete a match
-router.delete("/:id", async (req, res) => {
+// Delete a match - Superadmin only
+router.delete("/:id", verifyToken, isSuperadmin, async (req, res) => {
   const { id } = req.params;
   try {
     const result = await pool.query(
@@ -218,8 +219,8 @@ router.get("/:id/teams/:teamId/score", async (req, res) => {
   }
 });
 
-// Add a new ball to a match
-router.post("/:matchId/ball", async (req, res) => {
+// Add a new ball to a match - Admin only (live scoring)
+router.post("/:matchId/ball", verifyToken, isAdmin, async (req, res) => {
   const { matchId } = req.params;
   const {
     overNumber,

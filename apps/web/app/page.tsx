@@ -14,7 +14,6 @@ export default function Home() {
       cta: 'Watch Live',
       href: '/matches',
       linear: 'from-teal-600 via-teal-700 to-cyan-800',
-      // Uncomment below and comment 'linear' to use image instead:
       imageUrl: 'https://analyticsstepsfiles.s3.ap-south-1.amazonaws.com/backend/media/thumbnail/9021667/2895719_1611999733_title-bannerArtboard-1.png',
     },
     {
@@ -24,18 +23,7 @@ export default function Home() {
       cta: 'Explore Teams',
       href: '/teams',
       linear: 'from-purple-600 via-purple-700 to-indigo-800',
-      // Uncomment below and comment 'linear' to use image instead:
       imageUrl: 'https://elearn.nptel.ac.in/wp-content/uploads/2024/01/Cricket-Data-analysis-copy.jpg',
-    },
-    {
-      title: 'Ball-by-Ball Scoring',
-      subtitle: 'Professional scoring system',
-      description: 'Enter and manage live cricket scores with precision',
-      cta: 'Start Scoring',
-      href: '/ball-entry',
-      linear: 'from-orange-600 via-orange-700 to-red-800',
-      // Uncomment below and comment 'linear' to use image instead:
-      imageUrl: 'https://madaboutsports.in/wp-content/uploads/2021/01/MAS-Cricket-Analytics.jpg',
     },
   ];
 
@@ -60,15 +48,6 @@ export default function Home() {
       title: 'Teams',
       description: 'Explore cricket teams and their performance statistics',
       href: '/teams',
-      color: 'from-lime-400 to-lime-500',
-      textColor: 'text-lime-400',
-      borderColor: 'border-lime-500',
-      bgColor: 'bg-slate-900',
-    },
-    {
-      title: 'Live Scoring',
-      description: 'Enter ball-by-ball data and manage live cricket scoring',
-      href: '/ball-entry',
       color: 'from-lime-400 to-lime-500',
       textColor: 'text-lime-400',
       borderColor: 'border-lime-500',
@@ -119,7 +98,7 @@ export default function Home() {
 
             {/* Animated shapes */}
             <div className="absolute top-20 right-20 w-64 h-64 bg-white/10 rounded-full blur-3xl animate-pulse"></div>
-            <div className="absolute bottom-20 left-20 w-80 h-80 bg-white/5 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }}></div>
+            <div className="absolute bottom-20 left-20 w-80 h-80 bg-white/5 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '2s' }}></div>
           </div>
         ))}
 

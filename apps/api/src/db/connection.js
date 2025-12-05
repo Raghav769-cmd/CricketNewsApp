@@ -11,6 +11,6 @@ const pool = new Pool({
   password: process.env.DB_PASSWORD || '',
 });
 
-console.log('DB password value:', process.env.DB_PASSWORD);
-console.log('DB password type:', typeof process.env.DB_PASSWORD);
+// console.log('DB password value:', process.env.DB_PASSWORD);
+// console.log('DB password type:', typeof process.env.DB_PASSWORD);
 export default pool;

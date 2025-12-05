@@ -2,6 +2,7 @@ import express from 'express';
 import matchesRouter from './routes/matches.ts';
 import teamsRouter from './routes/teams.ts';
 import playersRouter from './routes/players.ts';
+import authRouter from './routes/auth.ts';
 import http from 'http';
 import { setupSocket } from './server.ts';
 import simulationRouter from './routes/simulation.ts';
@@ -18,7 +19,7 @@ app.use(cors({
   origin: 'http://localhost:3000',
 }));
 
-
+app.use('/api/auth', authRouter);
 app.use('/api/matches', matchesRouter);
 app.use('/api/teams', teamsRouter);
 app.use('/api/players', playersRouter);

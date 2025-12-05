@@ -36,11 +36,7 @@ export default function Footer() {
                   Teams
                 </Link>
               </li>
-              <li>
-                <Link href="/ball-entry" className="text-slate-400 hover:text-lime-400 transition-colors text-xs">
-                  Live Scoring
-                </Link>
-              </li>
+
             </ul>
           </div>
 

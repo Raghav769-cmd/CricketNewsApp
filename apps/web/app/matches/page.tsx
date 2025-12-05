@@ -2,6 +2,10 @@
 
 import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { useAuth } from "@/context/AuthContext";
+import { toast } from "@repo/ui/toast";
+import { useDialogStore } from "@/context/DialogStore";
+import { AddMatchForm } from "@/app/components/AddMatchForm";
 
 interface Match {
   id: number;
@@ -73,6 +77,7 @@ interface Team {
 
 export default function Matches() {
   const router = useRouter();
+  const { user, isAuthenticated, token, loading: authLoading } = useAuth();
   const [matches, setMatches] = useState<Match[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [matchScores, setMatchScores] = useState<Record<number, MatchScore>>(
@@ -86,16 +91,16 @@ export default function Matches() {
   const socketRef = useRef<any>(null);
   const [teams, setTeams] = useState<Team[]>([]);
   const [showAddMatchForm, setShowAddMatchForm] = useState<boolean>(false);
-  const [formData, setFormData] = useState({
-    team1: "",
-    team2: "",
-    date: "",
-    venue: "",
-    score: "",
-  });
   const [submitting, setSubmitting] = useState<boolean>(false);
+  const [deletingMatchId, setDeletingMatchId] = useState<number | null>(null);
 
   const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+
+  // No login required to view matches and insights
+  // Just wait for auth state to load
+  useEffect(() => {
+    // Auth loading complete, can proceed
+  }, [authLoading]);
 
   const fetchInsights = async (matchId: number) => {
     try {
@@ -209,30 +214,20 @@ export default function Matches() {
     }
   };
 
-  const handleAddMatch = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (
-      !formData.team1 ||
-      !formData.team2 ||
-      !formData.date ||
-      !formData.venue
-    ) {
-      alert("Please fill in all required fields");
-      return;
-    }
-
-    if (formData.team1 === formData.team2) {
-      alert("Team 1 and Team 2 must be different");
-      return;
-    }
-
+  const handleAddMatch = async (formData: {
+    team1: string;
+    team2: string;
+    date: string;
+    venue: string;
+    score?: string;
+  }) => {
     setSubmitting(true);
     try {
       const response = await fetch(`${apiBase}/api/matches`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`,
         },
         body: JSON.stringify({
           team1: parseInt(formData.team1),
@@ -255,19 +250,59 @@ export default function Matches() {
         };
 
         setMatches((prev) => [newMatchWithNames, ...prev]);
-
-        setFormData({ team1: "", team2: "", date: "", venue: "", score: "" });
         setShowAddMatchForm(false);
-        alert("Match added successfully!");
+        toast.success("Match added successfully!");
       } else {
-        alert("Failed to add match");
+        const error = await response.json();
+        toast.error(error.error || "Failed to add match");
       }
     } catch (error) {
       console.error("Error adding match:", error);
-      alert("Error adding match");
+      toast.error("Error adding match");
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleDeleteMatch = async (matchId: number) => {
+    const openDialog = useDialogStore.getState().openDialog;
+    const closeDialog = useDialogStore.getState().closeDialog;
+    const setLoading = useDialogStore.getState().setLoading;
+
+    openDialog({
+      title: "Delete Match",
+      message: "Are you sure you want to delete this match? This action cannot be undone.",
+      confirmText: "Delete",
+      cancelText: "Cancel",
+      isDangerous: true,
+      onConfirm: async () => {
+        setLoading(true);
+        try {
+          const response = await fetch(`${apiBase}/api/matches/${matchId}`, {
+            method: "DELETE",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${token}`,
+            },
+          });
+
+          if (response.ok) {
+            setMatches((prev) => prev.filter((match) => match.id !== matchId));
+            toast.success("Match deleted successfully!");
+            closeDialog();
+          } else {
+            const error = await response.json();
+            toast.error(error.error || "Failed to delete match");
+          }
+        } catch (error) {
+          console.error("Error deleting match:", error);
+          toast.error("Error deleting match");
+        } finally {
+          setLoading(false);
+          setDeletingMatchId(null);
+        }
+      },
+    });
   };
 
   useEffect(() => {
@@ -416,24 +451,19 @@ export default function Matches() {
               Follow your favorite cricket matches with real-time updates
             </p>
           </div>
-          <button
-            onClick={() => {
-              setShowAddMatchForm(true);
-              setFormData({
-                team1: "",
-                team2: "",
-                date: "",
-                venue: "",
-                score: "",
-              });
-            }}
-            className="bg-linear-to-r from-lime-500 to-lime-600 hover:from-lime-600 hover:to-lime-700 text-black px-6 py-3 rounded-lg font-semibold transition-all duration-300 flex items-center space-x-2 shadow-lg hover:shadow-xl"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-            <span>Add Match</span>
-          </button>
+          {user?.role === 'superadmin' && (
+            <button
+              onClick={() => {
+                setShowAddMatchForm(true);
+              }}
+              className="bg-linear-to-r from-lime-500 to-lime-600 hover:from-lime-600 hover:to-lime-700 text-black px-6 py-3 rounded-lg font-semibold transition-all duration-300 flex items-center space-x-2 shadow-lg hover:shadow-xl"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              <span>Add Match</span>
+            </button>
+          )}
         </div>
 
         {loading ? (
@@ -454,26 +484,21 @@ export default function Matches() {
               <p className="text-gray-400 mb-6">
                 There are currently no scheduled matches. Create a new match to start live scoring.
               </p>
-              <div className="flex justify-center">
-                <button
-                  onClick={() => {
-                    setShowAddMatchForm(true);
-                    setFormData({
-                      team1: "",
-                      team2: "",
-                      date: "",
-                      venue: "",
-                      score: "",
-                    });
-                  }}
-                  className="px-6 py-3 bg-linear-to-r from-lime-500 to-lime-600 hover:from-lime-600 hover:to-lime-700 text-black rounded-lg font-semibold shadow-lg hover:shadow-xl transition-all flex items-center space-x-2"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                  </svg>
-                  <span>Add Match</span>
-                </button>
-              </div>
+              {user?.role === 'superadmin' && (
+                <div className="flex justify-center">
+                  <button
+                    onClick={() => {
+                      setShowAddMatchForm(true);
+                    }}
+                    className="px-6 py-3 bg-linear-to-r from-lime-500 to-lime-600 hover:from-lime-600 hover:to-lime-700 text-black rounded-lg font-semibold shadow-lg hover:shadow-xl transition-all flex items-center space-x-2"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                    </svg>
+                    <span>Add Match</span>
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         ) : (
@@ -605,6 +630,32 @@ export default function Matches() {
                     </svg>
                     <span>Full Scorecard</span>
                   </button>
+                  {user?.role === 'admin' && (
+                    <button
+                      onClick={() => router.push(`/ball-entry`)}
+                      className="flex-1 px-4 py-2.5 bg-linear-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white font-medium rounded-lg transition-all duration-200 shadow-sm hover:shadow-md flex items-center justify-center space-x-2"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                      </svg>
+                      <span>Live Entry</span>
+                    </button>
+                  )}
+                  {user?.role === 'superadmin' && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteMatch(match.id);
+                      }}
+                      disabled={deletingMatchId === match.id}
+                      className="px-4 py-2.5 border-2 border-red-500 text-red-400 hover:bg-red-500/10 font-medium rounded-lg transition-all duration-200 flex items-center justify-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                      <span>{deletingMatchId === match.id ? "Deleting..." : "Delete"}</span>
+                    </button>
+                  )}
                 </div>
 
                 {/* Insights Panel */}
@@ -758,141 +809,12 @@ export default function Matches() {
 
       {/* Add Match Modal */}
       {showAddMatchForm && (
-        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4">
-          <div className="bg-slate-900 rounded-xl shadow-2xl max-w-md w-full p-8 border border-slate-800">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-2xl font-bold text-white">
-                Add New Match
-              </h2>
-              <button
-                onClick={() => setShowAddMatchForm(false)}
-                className="text-gray-400 hover:text-gray-300 text-2xl"
-              >
-                ×
-              </button>
-            </div>
-
-            <form onSubmit={handleAddMatch} className="space-y-5">
-              {/* Team 1 */}
-              <div>
-                <label className="block text-sm font-semibold text-gray-300 mb-2">
-                  Team 1 <span className="text-lime-500">*</span>
-                </label>
-                <select
-                  value={formData.team1}
-                  onChange={(e) =>
-                    setFormData({ ...formData, team1: e.target.value })
-                  }
-                  className="w-full px-4 py-2 border border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-lime-500 focus:border-transparent bg-slate-800 text-white"
-                  required
-                >
-                  <option value="">Select Team 1</option>
-
-                  {teams
-                    .filter((team) => String(team.id) !== formData.team2)
-                    .map((team) => (
-                      <option key={team.id} value={team.id}>
-                        {team.name}
-                      </option>
-                    ))}
-                </select>
-              </div>
-
-              {/* Team 2 */}
-              <div>
-                <label className="block text-sm font-semibold text-gray-300 mb-2">
-                  Team 2 <span className="text-lime-500">*</span>
-                </label>
-                <select
-                  value={formData.team2}
-                  onChange={(e) =>
-                    setFormData({ ...formData, team2: e.target.value })
-                  }
-                  className="w-full px-4 py-2 border border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-lime-500 focus:border-transparent bg-slate-800 text-white"
-                  required
-                >
-                  <option value="">Select Team 2</option>
-
-                  {teams
-                    .filter((team) => String(team.id) !== formData.team1)
-                    .map((team) => (
-                      <option key={team.id} value={team.id}>
-                        {team.name}
-                      </option>
-                    ))}
-                </select>
-              </div>
-
-              {/* Date */}
-              <div>
-                <label className="block text-sm font-semibold text-gray-300 mb-2">
-                  Date <span className="text-lime-500">*</span>
-                </label>
-                <input
-                  type="datetime-local"
-                  value={formData.date}
-                  onChange={(e) =>
-                    setFormData({ ...formData, date: e.target.value })
-                  }
-                  className="w-full px-4 py-2 border border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-lime-500 focus:border-transparent bg-slate-800 text-white"
-                  required
-                />
-              </div>
-
-              {/* Venue */}
-              <div>
-                <label className="block text-sm font-semibold text-gray-300 mb-2">
-                  Venue <span className="text-lime-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={formData.venue}
-                  onChange={(e) =>
-                    setFormData({ ...formData, venue: e.target.value })
-                  }
-                  placeholder="e.g., Lord's Cricket Ground"
-                  className="w-full px-4 py-2 border border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-lime-500 focus:border-transparent bg-slate-800 text-white"
-                  required
-                />
-              </div>
-
-              {/* Score (Optional) */}
-              <div>
-                <label className="block text-sm font-semibold text-gray-300 mb-2">
-                  Initial Score{" "}
-                  <span className="text-gray-400">(Optional)</span>
-                </label>
-                <input
-                  type="text"
-                  value={formData.score}
-                  onChange={(e) =>
-                    setFormData({ ...formData, score: e.target.value })
-                  }
-                  placeholder="e.g., 0-0"
-                  className="w-full px-4 py-2 border border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-lime-500 focus:border-transparent bg-slate-800 text-white"
-                />
-              </div>
-
-              {/* Buttons */}
-              <div className="flex gap-3 pt-4">
-                <button
-                  type="button"
-                  onClick={() => setShowAddMatchForm(false)}
-                  className="flex-1 px-4 py-2.5 border-2 border-slate-700 text-gray-300 rounded-lg font-semibold hover:bg-slate-800 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="flex-1 px-4 py-2.5 bg-linear-to-r from-lime-500 to-lime-600 text-black rounded-lg font-semibold hover:from-lime-600 hover:to-lime-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
-                >
-                  {submitting ? "Creating..." : "Create Match"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <AddMatchForm
+          teams={teams}
+          onClose={() => setShowAddMatchForm(false)}
+          onSubmit={handleAddMatch}
+          isSubmitting={submitting}
+        />
       )}
     </div>
   );

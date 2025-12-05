@@ -1,10 +1,11 @@
 import { Router } from 'express';
 import pool from '../db/connection.js';
 import { getIO } from '../server.ts';
+import { verifyToken, isAdmin } from '../middleware/auth.ts';
 
 const router: Router = Router();
 
-router.post('/:matchId/simulate', async (req, res) => {
+router.post('/:matchId/simulate', verifyToken, isAdmin, async (req, res) => {
   const { matchId } = req.params;
 
   try {

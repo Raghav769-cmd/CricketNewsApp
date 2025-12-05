@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import pool from '../db/connection.js';
+import { verifyToken, isAdmin } from '../middleware/auth.ts';
 
 const router: Router = Router();
 
@@ -42,8 +43,8 @@ router.get('/matches/:matchId/players/:playerId/description', async (req, res) =
 	}
 });
 
-// Create or update a player description (upsert)
-router.post('/matches/:matchId/players/:playerId/description', async (req, res) => {
+// Create or update a player description (upsert) - Admin only
+router.post('/matches/:matchId/players/:playerId/description', verifyToken, isAdmin, async (req, res) => {
 	const { matchId, playerId } = req.params;
 	const { description, author } = req.body;
 	if (!description || String(description).trim().length === 0) return res.status(400).send('Description is required');
