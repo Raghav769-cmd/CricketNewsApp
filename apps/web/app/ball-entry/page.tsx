@@ -93,53 +93,6 @@ export default function BallEntry() {
   const wicket = watch('wicket');
   const eventText = watch('eventText');
 
-  // Redirect to login if not authenticated or not admin (superadmin not allowed)
-  useEffect(() => {
-    if (!authLoading && (!isAuthenticated || user?.role !== 'admin')) {
-      router.push("/login");
-    }
-  }, [isAuthenticated, authLoading, user?.role, router]);
-
-  // Show loading while checking authentication
-  if (authLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
-          <p>Loading...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!isAuthenticated) {
-    return null;
-  }
-
-  const selectedMatchObj = matches.find((m) => m.id === selectedMatch);
-
-  const matchTeamIds: number[] = selectedMatchObj
-    ? [selectedMatchObj.team1_id, selectedMatchObj.team2_id]
-    : [];
-
-  // Only players from these two teams
-  const playersInMatch = players.filter((p) =>
-    matchTeamIds.includes(p.team_id)
-  );
-
-  useEffect(() => {
-    setValue('battingTeamId', 0);
-    setValue('strikerId', 0);
-    setValue('nonStrikerId', 0);
-    setValue('bowlerId', 0);
-  }, [selectedMatch, setValue]);
-
-  useEffect(() => {
-    fetchMatches();
-    fetchPlayers();
-    fetchTeams();
-  }, []);
-
   const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
   const fetchMatches = async () => {
@@ -202,6 +155,53 @@ export default function BallEntry() {
       console.error("Error fetching teams:", error);
     }
   };
+
+  // Redirect to login if not authenticated or not admin (superadmin not allowed)
+  useEffect(() => {
+    if (!authLoading && (!isAuthenticated || user?.role !== 'admin')) {
+      router.push("/login");
+    }
+  }, [isAuthenticated, authLoading, user?.role, router]);
+
+  useEffect(() => {
+    fetchMatches();
+    fetchPlayers();
+    fetchTeams();
+  }, []);
+
+  useEffect(() => {
+    setValue('battingTeamId', 0);
+    setValue('strikerId', 0);
+    setValue('nonStrikerId', 0);
+    setValue('bowlerId', 0);
+  }, [selectedMatch, setValue]);
+
+  // Show loading while checking authentication
+  if (authLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
+          <p>Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return null;
+  }
+
+  const selectedMatchObj = matches.find((m) => m.id === selectedMatch);
+
+  const matchTeamIds: number[] = selectedMatchObj
+    ? [selectedMatchObj.team1_id, selectedMatchObj.team2_id]
+    : [];
+
+  // Only players from these two teams
+  const playersInMatch = players.filter((p) =>
+    matchTeamIds.includes(p.team_id)
+  );
 
   const onSubmit = async (data: BallEntryFormData) => {
     const needsBatsman = data.extraType === "none";
