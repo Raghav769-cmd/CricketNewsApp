@@ -13,6 +13,7 @@ const addMatchSchema = z.object({
   date: z.string().min(1, 'Date is required'),
   venue: z.string().min(3, 'Venue must be at least 3 characters').max(100, 'Venue must be at most 100 characters'),
   score: z.string(),
+  overs_per_inning: z.string().min(1, 'Overs per inning is required'),
 }).refine((data) => data.team1 !== data.team2, {
   message: 'Team 1 and Team 2 must be different',
   path: ['team2'],
@@ -47,6 +48,7 @@ export const AddMatchForm: React.FC<AddMatchFormProps> = ({
       date: '',
       venue: '',
       score: '0-0',
+      overs_per_inning: '20',
     },
   });
 
@@ -150,18 +152,37 @@ export const AddMatchForm: React.FC<AddMatchFormProps> = ({
             />
           </FormField>
 
-          {/* Score (Optional) */}
-          <FormField 
-            label="Initial Score" 
-            helperText="Optional field"
-          >
-            <input
-              type="text"
-              placeholder="e.g., 0-0"
-              {...register('score')}
-              className="w-full px-4 py-3 border border-slate-700 rounded-lg bg-slate-800/50 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-lime-500 focus:border-transparent transition-all duration-200"
-            />
-          </FormField>
+          {/* Two Column Layout: Initial Score & Overs Per Inning */}
+          <div className="grid grid-cols-2 gap-4">
+            {/* Initial Score */}
+            <FormField 
+              label="Initial Score" 
+              helperText="Optional"
+            >
+              <input
+                type="text"
+                placeholder="e.g., 0-0"
+                {...register('score')}
+                className="w-full px-4 py-3 border border-slate-700 rounded-lg bg-slate-800/50 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-lime-500 focus:border-transparent transition-all duration-200"
+              />
+            </FormField>
+
+            {/* Overs Per Inning */}
+            <FormField label="Overs Per Inning" required error={errors.overs_per_inning?.message}>
+              <select
+                {...register('overs_per_inning')}
+                className={`w-full px-4 py-3 border rounded-lg bg-slate-800/50 text-white focus:outline-none focus:ring-2 focus:ring-lime-500 focus:border-transparent transition-all duration-200 ${
+                  errors.overs_per_inning ? 'border-red-500' : 'border-slate-700'
+                }`}
+              >
+                <option value="1">1 Over (Testing)</option>
+                <option value="5">5 Overs</option>
+                <option value="10">10 Overs</option>
+                <option value="20">20 Overs (T20)</option>
+                <option value="50">50 Overs (ODI)</option>
+              </select>
+            </FormField>
+          </div>
 
           {/* Buttons */}
           <div className="flex gap-3 pt-4">

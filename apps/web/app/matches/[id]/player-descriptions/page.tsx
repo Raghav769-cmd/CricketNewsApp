@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from 'react';
+import React from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { toast } from '@repo/ui/toast';
@@ -17,6 +18,7 @@ export default function PlayerDescriptionsPage() {
 
   const [players, setPlayers] = useState<Player[]>([]);
   const [descriptions, setDescriptions] = useState<DescriptionRow[]>([]);
+  const [match, setMatch] = useState<any>(null);
   const [selectedPlayer, setSelectedPlayer] = useState<number | ''>('');
   const [text, setText] = useState<string>('');
   const [author, setAuthor] = useState<string>('');
@@ -48,6 +50,7 @@ export default function PlayerDescriptionsPage() {
 
   useEffect(() => { fetchPlayers(); }, []);
   useEffect(() => { if (matchId) fetchDescriptions(); }, [matchId]);
+  useEffect(() => { if (matchId) fetchMatch(); }, [matchId]);
 
   async function fetchPlayers() {
     try {
@@ -56,6 +59,17 @@ export default function PlayerDescriptionsPage() {
       setPlayers(await res.json());
     } catch (err) {
       console.error('fetch players failed', err);
+    }
+  }
+
+  async function fetchMatch() {
+    if (!matchId) return;
+    try {
+      const res = await fetch(`${apiBase}/api/matches/${matchId}`);
+      if (!res.ok) return;
+      setMatch(await res.json());
+    } catch (err) {
+      console.error('fetch match failed', err);
     }
   }
 
@@ -113,7 +127,9 @@ export default function PlayerDescriptionsPage() {
           <label className="block text-sm font-medium text-gray-300">Player</label>
           <select className="mt-1 p-2 w-full border border-slate-700 rounded bg-slate-800 text-white focus:ring-2 focus:ring-lime-500" value={selectedPlayer} onChange={(e) => setSelectedPlayer(Number(e.target.value) || '')}>
             <option value="">Select player</option>
-            {players.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            {players
+              .filter(p => match && (p.team_id === match.team1 || p.team_id === match.team2 || p.team_id === match.team1_id || p.team_id === match.team2_id))
+              .map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
         </div>
 

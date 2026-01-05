@@ -55,11 +55,11 @@ router.get("/:id", async (req, res) => {
 
 // Add match - Superadmin only
 router.post("/", verifyToken, isSuperadmin, async (req, res) => {
-  const { team1, team2, date, venue, score } = req.body;
+  const { team1, team2, date, venue, score, overs_per_inning } = req.body;
   try {
     const result = await pool.query(
-      "INSERT INTO matches (team1, team2, date, venue, score) VALUES ($1, $2, $3, $4, $5) RETURNING *",
-      [team1, team2, date, venue, score]
+      "INSERT INTO matches (team1, team2, date, venue, score, overs_per_inning, current_inning, inning1_complete) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *",
+      [team1, team2, date, venue, score, overs_per_inning, 1, false]
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -71,11 +71,33 @@ router.post("/", verifyToken, isSuperadmin, async (req, res) => {
 // Update a match
 router.put("/:id", async (req, res) => {
   const { id } = req.params;
-  const { team1, team2, date, venue, score } = req.body;
+  const { team1, team2, date, venue, score, overs_per_inning } = req.body;
   try {
     const result = await pool.query(
-      "UPDATE matches SET team1 = $1, team2 = $2, date = $3, venue = $4, score = $5 WHERE id = $6 RETURNING *",
-      [team1, team2, date, venue, score, id]
+      "UPDATE matches SET team1 = $1, team2 = $2, date = $3, venue = $4, score = $5, overs_per_inning = $6 WHERE id = $7 RETURNING *",
+      [team1, team2, date, venue, score, overs_per_inning, id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).send("Match not found");
+    }
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("Server Error");
+  }
+});
+
+// Update inning status - Admin only
+router.put("/:id/inning", verifyToken, isAdmin, async (req, res) => {
+  const { id } = req.params;
+  const { battingTeamId } = req.body;
+  try {
+    const result = await pool.query(
+      `UPDATE matches 
+       SET inning1_team_id = $1, inning1_complete = true, current_inning = 2 
+       WHERE id = $2 
+       RETURNING *`,
+      [battingTeamId, id]
     );
     if (result.rows.length === 0) {
       return res.status(404).send("Match not found");
@@ -610,6 +632,114 @@ router.get("/:id/insights", async (req, res) => {
     });
   } catch (err) {
     console.error("Error computing insights:", err);
+    res.status(500).send("Server Error");
+  }
+});
+
+// Get player stats for all players in a match (grouped by team)
+router.get("/:id/player-stats", async (req, res) => {
+  const { id } = req.params;
+  try {
+    // Batting stats per player per match
+    const battingQuery = `
+      SELECT 
+        o.batting_team_id AS team_id,
+        b.batsman_id AS player_id,
+        p.name AS player_name,
+        SUM(b.runs) AS runs,
+        COUNT(*) FILTER (WHERE NOT ((COALESCE(b.extras,'0') ~* '^(wide|wd|no-?ball|nb)') OR (COALESCE(b.event,'') ~* '^(wide|wd|no-?ball|nb)'))) AS balls,
+        COUNT(*) FILTER (WHERE b.runs = 4) AS fours,
+        COUNT(*) FILTER (WHERE b.runs = 6) AS sixes,
+        COUNT(*) FILTER (WHERE b.is_wicket) AS times_out,
+        MAX(CASE WHEN b.is_wicket THEN b.event END) AS dismissal
+      FROM balls b
+      JOIN overs o ON b.over_id = o.id
+      LEFT JOIN players p ON b.batsman_id = p.id
+      WHERE o.match_id = $1 AND b.batsman_id IS NOT NULL
+      GROUP BY o.batting_team_id, b.batsman_id, p.name
+      ORDER BY o.batting_team_id, SUM(b.runs) DESC
+    `;
+
+    // Bowling stats per player per match
+    const bowlingQuery = `
+      SELECT 
+        o.batting_team_id AS batting_team_id,
+        b.bowler_id AS player_id,
+        p.name AS player_name,
+        COUNT(*) FILTER (WHERE NOT ((COALESCE(b.extras,'0') ~* '^(wide|wd|no-?ball|nb)') OR (COALESCE(b.event,'') ~* '^(wide|wd|no-?ball|nb)'))) AS balls,
+        SUM(b.runs + COALESCE(CAST(b.extras AS INTEGER),0)) AS runs_conceded,
+        SUM(CASE WHEN b.is_wicket THEN 1 ELSE 0 END) AS wickets,
+        COUNT(*) FILTER (WHERE b.runs = 4) AS fours_conceded,
+        COUNT(*) FILTER (WHERE b.runs = 6) AS sixes_conceded
+      FROM balls b
+      JOIN overs o ON b.over_id = o.id
+      LEFT JOIN players p ON b.bowler_id = p.id
+      WHERE o.match_id = $1 AND b.bowler_id IS NOT NULL
+      GROUP BY o.batting_team_id, b.bowler_id, p.name
+      ORDER BY o.batting_team_id, SUM(CASE WHEN b.is_wicket THEN 1 ELSE 0 END) DESC
+    `;
+
+    const [battingRes, bowlingRes] = await Promise.all([
+      pool.query(battingQuery, [id]),
+      pool.query(bowlingQuery, [id])
+    ]);
+
+    // Group stats by team
+    const teamStats: Record<number, any> = {};
+
+    // batting stats
+    for (const row of battingRes.rows) {
+      const teamId = row.team_id;
+      if (!teamStats[teamId]) {
+        teamStats[teamId] = { batting: [], bowling: [] };
+      }
+
+      const strikeRate = row.balls > 0 ? 
+        ((parseInt(row.runs) || 0) / parseInt(row.balls) * 100).toFixed(2) : 
+        '0.00';
+
+      teamStats[teamId].batting.push({
+        playerId: row.player_id,
+        playerName: row.player_name,
+        runs: parseInt(row.runs) || 0,
+        balls: parseInt(row.balls) || 0,
+        fours: parseInt(row.fours) || 0,
+        sixes: parseInt(row.sixes) || 0,
+        timesOut: parseInt(row.times_out) || 0,
+        dismissal: row.dismissal,
+        strikeRate: parseFloat(strikeRate)
+      });
+    }
+
+    // bowling stats
+    for (const row of bowlingRes.rows) {
+      const teamId = row.batting_team_id;
+      if (!teamStats[teamId]) {
+        teamStats[teamId] = { batting: [], bowling: [] };
+      }
+
+      const economy = row.balls > 0 ? 
+        ((parseInt(row.runs_conceded) || 0) / parseInt(row.balls) * 6).toFixed(2) : 
+        '0.00';
+
+      teamStats[teamId].bowling.push({
+        playerId: row.player_id,
+        playerName: row.player_name,
+        balls: parseInt(row.balls) || 0,
+        runsConceded: parseInt(row.runs_conceded) || 0,
+        wickets: parseInt(row.wickets) || 0,
+        economy: parseFloat(economy),
+        foursConceded: parseInt(row.fours_conceded) || 0,
+        sixesConceded: parseInt(row.sixes_conceded) || 0
+      });
+    }
+
+    res.json({
+      matchId: parseInt(id),
+      teams: teamStats
+    });
+  } catch (err) {
+    console.error("Error fetching player stats:", err);
     res.status(500).send("Server Error");
   }
 });

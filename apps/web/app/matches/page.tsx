@@ -220,6 +220,7 @@ export default function Matches() {
     date: string;
     venue: string;
     score?: string;
+    overs_per_inning?: string;
   }) => {
     setSubmitting(true);
     try {
@@ -235,6 +236,7 @@ export default function Matches() {
           date: formData.date,
           venue: formData.venue,
           score: formData.score || "0-0",
+          overs_per_inning: parseInt(formData.overs_per_inning || '20'),
         }),
       });
 
@@ -437,17 +439,17 @@ export default function Matches() {
 
   return (
     <div className="min-h-screen bg-black">
-      <div className="container mx-auto px-4 py-8">
-        <div className="mb-8 flex justify-between items-start">
+      <div className="container mx-auto px-3 sm:px-4 py-6 sm:py-8">
+        <div className="mb-6 sm:mb-8 flex flex-col sm:flex-row justify-between items-start gap-4 sm:items-start">
           <div>
             <div className="inline-flex items-center px-3 py-1 rounded-full bg-slate-900 border border-lime-500 mb-3">
               <span className="w-2 h-2 bg-lime-500 rounded-full mr-2 animate-pulse" />
-              <span className="text-sm font-medium text-lime-400">Live Matches</span>
+              <span className="text-xs sm:text-sm font-medium text-lime-400">Live Matches</span>
             </div>
-            <h1 className="text-4xl font-bold text-white mb-2">
+            <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-2">
               Match Center
             </h1>
-            <p className="text-gray-400">
+            <p className="text-xs sm:text-sm text-gray-400">
               Follow your favorite cricket matches with real-time updates
             </p>
           </div>
@@ -456,9 +458,9 @@ export default function Matches() {
               onClick={() => {
                 setShowAddMatchForm(true);
               }}
-              className="bg-linear-to-r from-lime-500 to-lime-600 hover:from-lime-600 hover:to-lime-700 text-black px-6 py-3 rounded-lg font-semibold transition-all duration-300 flex items-center space-x-2 shadow-lg hover:shadow-xl"
+              className="w-full sm:w-auto bg-linear-to-r from-lime-500 to-lime-600 hover:from-lime-600 hover:to-lime-700 text-black px-4 sm:px-6 py-2.5 sm:py-3 rounded-lg font-semibold transition-all duration-300 flex items-center justify-center sm:justify-start space-x-2 shadow-lg hover:shadow-xl text-xs sm:text-sm"
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
               </svg>
               <span>Add Match</span>
@@ -468,20 +470,20 @@ export default function Matches() {
 
         {loading ? (
           <div className="flex items-center justify-center py-20">
-            <div className="animate-spin rounded-full h-12 w-12 border-4 border-lime-500 border-t-transparent" />
+            <div className="animate-spin rounded-full h-10 w-10 sm:h-12 sm:w-12 border-4 border-lime-500 border-t-transparent" />
           </div>
         ) : matches.length === 0 ? (
-          <div className="flex items-center justify-center py-20">
-            <div className="bg-slate-900 rounded-xl border border-slate-800 shadow-sm p-12 text-center max-w-xl w-full">
-              <div className="w-20 h-20 mx-auto mb-6 bg-linear-to-br from-slate-800 to-slate-900 rounded-full flex items-center justify-center">
-                <svg className="w-10 h-10 text-lime-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="flex items-center justify-center py-12 sm:py-20 px-3 sm:px-0">
+            <div className="bg-slate-900 rounded-lg sm:rounded-xl border border-slate-800 shadow-sm p-6 sm:p-12 text-center max-w-xl w-full">
+              <div className="w-14 h-14 sm:w-20 sm:h-20 mx-auto mb-4 sm:mb-6 bg-linear-to-br from-slate-800 to-slate-900 rounded-full flex items-center justify-center">
+                <svg className="w-7 h-7 sm:w-10 sm:h-10 text-lime-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
               </div>
-              <h2 className="text-2xl font-bold text-white mb-2">
+              <h2 className="text-lg sm:text-2xl font-bold text-white mb-2">
                 No matches available
               </h2>
-              <p className="text-gray-400 mb-6">
+              <p className="text-xs sm:text-sm text-gray-400 mb-4 sm:mb-6">
                 There are currently no scheduled matches. Create a new match to start live scoring.
               </p>
               {user?.role === 'superadmin' && (
@@ -490,9 +492,9 @@ export default function Matches() {
                     onClick={() => {
                       setShowAddMatchForm(true);
                     }}
-                    className="px-6 py-3 bg-linear-to-r from-lime-500 to-lime-600 hover:from-lime-600 hover:to-lime-700 text-black rounded-lg font-semibold shadow-lg hover:shadow-xl transition-all flex items-center space-x-2"
+                    className="w-full sm:w-auto px-4 sm:px-6 py-2.5 sm:py-3 bg-linear-to-r from-lime-500 to-lime-600 hover:from-lime-600 hover:to-lime-700 text-black rounded-lg font-semibold shadow-lg hover:shadow-xl transition-all flex items-center justify-center space-x-2 text-xs sm:text-sm"
                   >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                     </svg>
                     <span>Add Match</span>
@@ -502,25 +504,25 @@ export default function Matches() {
             </div>
           </div>
         ) : (
-          <div className="space-y-6">
+          <div className="space-y-4 sm:space-y-6">
             {matches.map((match) => (
               <div
                 key={match.id}
-                className="bg-slate-900 rounded-xl shadow-sm hover:shadow-lg transition-all duration-300 overflow-hidden border border-slate-800"
+                className="bg-slate-900 rounded-lg sm:rounded-xl shadow-sm hover:shadow-lg transition-all duration-300 overflow-hidden border border-slate-800"
               >
                 {/* Match Header */}
-                <div className="bg-linear-to-r from-slate-800/50 to-slate-700/50 px-6 py-4 border-b border-slate-700">
-                  <div className="flex justify-between items-center">
-                    <div className="flex items-center space-x-3">
-                      <span className="px-3 py-1 bg-lime-500 text-black text-xs font-semibold rounded-full flex items-center">
-                        <span className="w-2 h-2 bg-black rounded-full mr-2 animate-pulse" />
+                <div className="bg-linear-to-r from-slate-800/50 to-slate-700/50 px-3 sm:px-6 py-3 sm:py-4 border-b border-slate-700">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 sm:gap-4">
+                    <div className="flex items-center space-x-2 sm:space-x-3 w-full sm:w-auto">
+                      <span className="px-2 sm:px-3 py-0.5 sm:py-1 bg-lime-500 text-black text-xs font-semibold rounded-full flex items-center shrink-0">
+                        <span className="w-2 h-2 bg-black rounded-full mr-1.5 animate-pulse" />
                         {match.status}
                       </span>
-                      <span className="text-sm text-gray-300 font-medium">
+                      <span className="text-xs sm:text-sm text-gray-300 font-medium truncate">
                         {match.venue}
                       </span>
                     </div>
-                    <span className="text-sm text-gray-400">
+                    <span className="text-xs sm:text-sm text-gray-400 shrink-0">
                       {new Date(match.date).toLocaleDateString("en-US", {
                         month: "short",
                         day: "numeric",
@@ -533,29 +535,29 @@ export default function Matches() {
 
                 {/* Teams and Scores */}
                 <div
-                  className="px-6 py-6 cursor-pointer"
+                  className="px-3 sm:px-6 py-4 sm:py-6 cursor-pointer"
                   onClick={() => router.push(`/matches/${match.id}`)}
                 >
-                  <div className="space-y-4">
+                  <div className="space-y-3 sm:space-y-4">
                     {/* Team 1 */}
-                    <div className="flex justify-between items-center">
-                      <div className="flex items-center space-x-3">
-                        <div className="w-12 h-12 bg-linear-to-br from-purple-500 to-purple-600 rounded-xl flex items-center justify-center text-white font-bold shadow-md">
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 sm:gap-3">
+                      <div className="flex items-center space-x-2 sm:space-x-3 min-w-0">
+                        <div className="w-10 h-10 sm:w-12 sm:h-12 bg-linear-to-br from-purple-500 to-purple-600 rounded-lg sm:rounded-xl flex items-center justify-center text-white font-bold shadow-md text-xs sm:text-sm shrink-0">
                           {(match.team1_name || String(match.team1))
                             .substring(0, 2)
                             .toUpperCase()}
                         </div>
-                        <h3 className="text-xl font-bold text-white">
+                        <h3 className="text-base sm:text-xl font-bold text-white truncate">
                           {match.team1_name || match.team1}
                         </h3>
                       </div>
                       {matchScores[match.id]?.scores?.[0] && (
-                        <div className="text-right">
-                          <div className="text-3xl font-bold text-white">
+                        <div className="text-right shrink-0">
+                          <div className="text-2xl sm:text-3xl font-bold text-white">
                             {matchScores[match.id]?.scores?.[0]?.runs}/
                             {matchScores[match.id]?.scores?.[0]?.wickets}
                           </div>
-                          <div className="text-sm text-gray-400">
+                          <div className="text-xs sm:text-sm text-gray-400">
                             ({matchScores[match.id]?.scores?.[0]?.overs} ov)
                           </div>
                         </div>
@@ -565,31 +567,31 @@ export default function Matches() {
                     {/* VS Divider */}
                     <div className="flex items-center">
                       <div className="flex-1 border-t border-slate-700" />
-                      <span className="px-4 text-sm font-semibold text-gray-400">
+                      <span className="px-3 sm:px-4 text-xs sm:text-sm font-semibold text-gray-400">
                         VS
                       </span>
                       <div className="flex-1 border-t border-slate-700" />
                     </div>
 
                     {/* Team 2 */}
-                    <div className="flex justify-between items-center">
-                      <div className="flex items-center space-x-3">
-                        <div className="w-12 h-12 bg-linear-to-br from-orange-500 to-orange-600 rounded-xl flex items-center justify-center text-white font-bold shadow-md">
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 sm:gap-3">
+                      <div className="flex items-center space-x-2 sm:space-x-3 min-w-0">
+                        <div className="w-10 h-10 sm:w-12 sm:h-12 bg-linear-to-br from-orange-500 to-orange-600 rounded-lg sm:rounded-xl flex items-center justify-center text-white font-bold shadow-md text-xs sm:text-sm shrink-0">
                           {(match.team2_name || String(match.team2))
                             .substring(0, 2)
                             .toUpperCase()}
                         </div>
-                        <h3 className="text-xl font-bold text-white">
+                        <h3 className="text-base sm:text-xl font-bold text-white truncate">
                           {match.team2_name || match.team2}
                         </h3>
                       </div>
                       {matchScores[match.id]?.scores?.[1] && (
-                        <div className="text-right">
-                          <div className="text-3xl font-bold text-white">
+                        <div className="text-right shrink-0">
+                          <div className="text-2xl sm:text-3xl font-bold text-white">
                             {matchScores[match.id]?.scores?.[1]?.runs}/
                             {matchScores[match.id]?.scores?.[1]?.wickets}
                           </div>
-                          <div className="text-sm text-gray-400">
+                          <div className="text-xs sm:text-sm text-gray-400">
                             ({matchScores[match.id]?.scores?.[1]?.overs} ov)
                           </div>
                         </div>
@@ -599,8 +601,8 @@ export default function Matches() {
 
                   {match.liveScore &&
                     !matchScores[match.id]?.scores?.length && (
-                      <div className="mt-4 p-3 bg-green-500/20 border border-green-500 rounded-lg">
-                        <p className="text-green-400 font-medium">
+                      <div className="mt-3 sm:mt-4 p-2 sm:p-3 bg-green-500/20 border border-green-500 rounded-lg">
+                        <p className="text-xs sm:text-sm text-green-400 font-medium">
                           {match.liveScore}
                         </p>
                       </div>
@@ -608,37 +610,37 @@ export default function Matches() {
                 </div>
 
                 {/* Action Buttons */}
-                <div className="px-6 pb-4 flex gap-3">
+                <div className="px-3 sm:px-6 pb-3 sm:pb-4 flex flex-col sm:flex-row gap-2 sm:gap-3">
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
                       toggleInsights(match.id);
                     }}
-                    className="flex-1 px-4 py-2.5 bg-linear-to-r from-lime-500 to-lime-600 hover:from-lime-600 hover:to-lime-700 text-black font-medium rounded-lg transition-all duration-200 shadow-sm hover:shadow-md flex items-center justify-center space-x-2"
+                    className="flex-1 px-3 sm:px-4 py-2 sm:py-2.5 bg-linear-to-r from-lime-500 to-lime-600 hover:from-lime-600 hover:to-lime-700 text-black font-medium rounded-lg transition-all duration-200 shadow-sm hover:shadow-md flex items-center justify-center space-x-2 text-xs sm:text-sm"
                   >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                     </svg>
-                    <span>{expandedMatchId === match.id ? "Hide Insights" : "View Insights"}</span>
+                    <span className="truncate">{expandedMatchId === match.id ? "Hide Insights" : "View Insights"}</span>
                   </button>
                   <button
                     onClick={() => router.push(`/matches/${match.id}`)}
-                    className="flex-1 px-4 py-2.5 border-2 border-lime-500 text-lime-400 hover:bg-lime-500/10 font-medium rounded-lg transition-all duration-200 flex items-center justify-center space-x-2"
+                    className="flex-1 px-3 sm:px-4 py-2 sm:py-2.5 border-2 border-lime-500 text-lime-400 hover:bg-lime-500/10 font-medium rounded-lg transition-all duration-200 flex items-center justify-center space-x-2 text-xs sm:text-sm"
                   >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                     </svg>
-                    <span>Full Scorecard</span>
+                    <span className="truncate">Full Scorecard</span>
                   </button>
                   {user?.role === 'admin' && (
                     <button
                       onClick={() => router.push(`/ball-entry`)}
-                      className="flex-1 px-4 py-2.5 bg-linear-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white font-medium rounded-lg transition-all duration-200 shadow-sm hover:shadow-md flex items-center justify-center space-x-2"
+                      className="flex-1 px-3 sm:px-4 py-2 sm:py-2.5 bg-linear-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white font-medium rounded-lg transition-all duration-200 shadow-sm hover:shadow-md flex items-center justify-center space-x-2 text-xs sm:text-sm"
                     >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                       </svg>
-                      <span>Live Entry</span>
+                      <span className="truncate">Live Entry</span>
                     </button>
                   )}
                   {user?.role === 'superadmin' && (
@@ -648,43 +650,43 @@ export default function Matches() {
                         handleDeleteMatch(match.id);
                       }}
                       disabled={deletingMatchId === match.id}
-                      className="px-4 py-2.5 border-2 border-red-500 text-red-400 hover:bg-red-500/10 font-medium rounded-lg transition-all duration-200 flex items-center justify-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="flex-1 px-3 sm:px-4 py-2 sm:py-2.5 border-2 border-red-500 text-red-400 hover:bg-red-500/10 font-medium rounded-lg transition-all duration-200 flex items-center justify-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed text-xs sm:text-sm"
                     >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                       </svg>
-                      <span>{deletingMatchId === match.id ? "Deleting..." : "Delete"}</span>
+                      <span className="truncate">{deletingMatchId === match.id ? "Deleting..." : "Delete"}</span>
                     </button>
                   )}
                 </div>
 
                 {/* Insights Panel */}
                 {expandedMatchId === match.id && (
-                  <div className="px-6 pb-6">
-                    <div className="bg-linear-to-br from-slate-800/50 to-slate-700/50 rounded-lg p-6 border border-slate-700">
-                      <h3 className="text-lg font-bold text-lime-400 mb-4 flex items-center">
-                        <svg className="w-6 h-6 mr-2 text-lime-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <div className="px-3 sm:px-6 pb-4 sm:pb-6">
+                    <div className="bg-linear-to-br from-slate-800/50 to-slate-700/50 rounded-lg p-3 sm:p-6 border border-slate-700">
+                      <h3 className="text-base sm:text-lg font-bold text-lime-400 mb-3 sm:mb-4 flex items-center">
+                        <svg className="w-5 h-5 sm:w-6 sm:h-6 mr-2 text-lime-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                         </svg>
                         <span>Match Insights</span>
                       </h3>
 
                       {!insightsMap[match.id] && (
-                        <div className="flex items-center justify-center py-8">
-                          <div className="animate-spin rounded-full h-8 w-8 border-4 border-lime-500 border-t-transparent" />
+                        <div className="flex items-center justify-center py-6 sm:py-8">
+                          <div className="animate-spin rounded-full h-7 w-7 sm:h-8 sm:w-8 border-4 border-lime-500 border-t-transparent" />
                         </div>
                       )}
 
                       {insightsMap[match.id] &&
                         insightsMap[match.id] !== null && (
-                          <div className="space-y-4">
+                          <div className="space-y-3 sm:space-y-4">
                             {/* Description */}
-                            <div className="bg-slate-800/50 rounded-lg p-4 space-y-2 border border-slate-700">
+                            <div className="bg-slate-800/50 rounded-lg p-3 sm:p-4 space-y-2 border border-slate-700">
                               {renderDescriptions(insightsMap[match.id]).map(
                                 (line, idx) => (
                                   <p
                                     key={idx}
-                                    className="text-sm text-gray-300 leading-relaxed"
+                                    className="text-xs sm:text-sm text-gray-300 leading-relaxed"
                                   >
                                     • {line}
                                   </p>
@@ -694,32 +696,32 @@ export default function Matches() {
 
                             {/* Top Scorers */}
                             {insightsMap[match.id]!.topScorers.length > 0 && (
-                              <div className="bg-slate-800/50 rounded-lg p-4 border border-slate-700">
-                                <h4 className="font-semibold text-lime-400 mb-3 flex items-center">
-                                  <svg className="w-5 h-5 mr-2 text-lime-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <div className="bg-slate-800/50 rounded-lg p-3 sm:p-4 border border-slate-700">
+                                <h4 className="font-semibold text-xs sm:text-sm text-lime-400 mb-2 sm:mb-3 flex items-center">
+                                  <svg className="w-4 h-4 sm:w-5 sm:h-5 mr-2 text-lime-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
                                   </svg>
                                   <span>Top Performers</span>
                                 </h4>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3">
                                   {insightsMap[match.id]!.topScorers.slice(
                                     0,
                                     4
                                   ).map((p) => (
                                     <div
                                       key={p.playerId}
-                                      className="flex justify-between items-center p-3 bg-slate-700/30 rounded-lg border border-slate-600"
+                                      className="flex justify-between items-start sm:items-center p-2 sm:p-3 bg-slate-700/30 rounded-lg border border-slate-600 gap-2"
                                     >
-                                      <div>
-                                        <div className="font-medium text-white">
+                                      <div className="min-w-0 flex-1">
+                                        <div className="font-medium text-xs sm:text-sm text-white truncate">
                                           {p.playerName}
                                         </div>
-                                        <div className="text-xs text-gray-400">
-                                          Position: {p.battingPosition ?? "N/A"}
+                                        <div className="text-xs text-gray-400 truncate">
+                                          Pos: {p.battingPosition ?? "N/A"}
                                         </div>
                                       </div>
-                                      <div className="text-right">
-                                        <div className="text-lg font-bold text-lime-400">
+                                      <div className="text-right shrink-0">
+                                        <div className="text-lg sm:text-xl font-bold text-lime-400">
                                           {p.runs}
                                         </div>
                                         <div className="text-xs text-gray-400">
@@ -735,14 +737,14 @@ export default function Matches() {
                             {/* Recent Balls */}
                             {insightsMap[match.id]!.balls &&
                               insightsMap[match.id]!.balls!.length > 0 && (
-                                <div className="bg-slate-800/50 rounded-lg p-4 border border-slate-700">
-                                  <h4 className="font-semibold text-lime-400 mb-3 flex items-center">
-                                    <svg className="w-5 h-5 mr-2 text-lime-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <div className="bg-slate-800/50 rounded-lg p-3 sm:p-4 border border-slate-700">
+                                  <h4 className="font-semibold text-xs sm:text-sm text-lime-400 mb-2 sm:mb-3 flex items-center">
+                                    <svg className="w-4 h-4 sm:w-5 sm:h-5 mr-2 text-lime-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                                     </svg>
                                     <span>Recent Deliveries</span>
                                   </h4>
-                                  <div className="space-y-2 max-h-64 overflow-y-auto">
+                                  <div className="space-y-1 sm:space-y-2 max-h-48 sm:max-h-64 overflow-y-auto">
                                     {(insightsMap[match.id]!.balls || [])
                                       .slice()
                                       .reverse()
@@ -750,10 +752,10 @@ export default function Matches() {
                                       .map((b) => (
                                         <div
                                           key={b.ballId}
-                                          className="flex justify-between items-center p-2 bg-slate-700/30 rounded hover:bg-slate-700/50 transition-colors border border-slate-600"
+                                          className="flex justify-between items-start sm:items-center p-2 sm:p-2 bg-slate-700/30 rounded hover:bg-slate-700/50 transition-colors border border-slate-600 gap-2"
                                         >
-                                          <div className="flex-1">
-                                            <div className="text-sm font-medium text-white">
+                                          <div className="flex-1 min-w-0">
+                                            <div className="text-xs sm:text-sm font-medium text-white truncate">
                                               {b.batsmanName || "Batsman"} vs{" "}
                                               {b.bowlerName || "Bowler"}
                                             </div>
@@ -765,9 +767,9 @@ export default function Matches() {
                                               )}
                                             </div>
                                           </div>
-                                          <div className="text-right">
+                                          <div className="text-right shrink-0">
                                             <span
-                                              className={`inline-block px-2 py-1 rounded text-xs font-bold ${
+                                              className={`inline-block px-1.5 sm:px-2 py-0.5 sm:py-1 rounded text-xs font-bold ${
                                                 b.runs === 6
                                                   ? "bg-linear-to-r from-rose-500 to-pink-500 text-white"
                                                   : b.runs === 4
@@ -792,8 +794,8 @@ export default function Matches() {
                         )}
 
                       {insightsMap[match.id] === null && (
-                        <div className="bg-red-500/20 border border-red-500 rounded-lg p-4 text-center">
-                          <p className="text-red-400">
+                        <div className="bg-red-500/20 border border-red-500 rounded-lg p-3 sm:p-4 text-center">
+                          <p className="text-xs sm:text-sm text-red-400">
                             Unable to load insights for this match
                           </p>
                         </div>

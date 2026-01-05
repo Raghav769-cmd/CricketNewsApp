@@ -25,28 +25,28 @@ export default function Header() {
 
   return (
     <header className="bg-black border-b border-slate-800 sticky top-0 z-50 shadow-md">
-      <div className="container mx-auto px-4">
-        <div className="flex items-center justify-between h-20">
-          <Link href="/" className="flex items-center space-x-3">
-            <div className="w-12 h-12 bg-linear-to-br from-lime-400 to-lime-500 rounded-lg flex items-center justify-center shadow-md">
-              <svg className="w-8 h-8 text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <div className="container mx-auto px-3 sm:px-4">
+        <div className="flex items-center justify-between h-16 sm:h-20">
+          <Link href="/" className="flex items-center space-x-2 sm:space-x-3 min-w-0">
+            <div className="w-10 h-10 sm:w-12 sm:h-12 bg-linear-to-br from-lime-400 to-lime-500 rounded-lg flex items-center justify-center shadow-md shrink-0">
+              <svg className="w-6 h-6 sm:w-8 sm:h-8 text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
               </svg>
             </div>
-            <div className="hidden sm:block">
-              <span className="text-2xl font-bold text-white">CricketLive</span>
+            <div className="hidden sm:block min-w-0">
+              <span className="text-xl sm:text-2xl font-bold text-white truncate">CricketLive</span>
               <div className="text-xs text-gray-500 font-semibold">Real-time Updates</div>
             </div>
           </Link>
 
-          <nav className="flex items-center space-x-1">
+          <nav className="hidden md:flex items-center space-x-1">
             {navLinks.map((link) => {
               const isActive = pathname === link.href;
               return (
                 <Link
                   key={link.href}
                   href={link.href}
-                  className={`px-4 py-2 rounded-lg text-md font-medium transition-all duration-200 ${
+                  className={`px-3 md:px-4 py-2 rounded-lg text-sm md:text-base font-medium transition-all duration-200 ${
                     isActive
                       ? 'bg-lime-500 text-black'
                       : 'text-gray-400 hover:bg-slate-900 hover:text-lime-400'
@@ -58,8 +58,8 @@ export default function Header() {
             })}
           </nav>
 
-          <div className="flex items-center space-x-4">
-            <div className="hidden md:flex items-center space-x-2 bg-lime-500 px-3 py-1.5 rounded-full shadow-sm">
+          <div className="flex items-center space-x-2 sm:space-x-4">
+            <div className="hidden md:flex items-center space-x-2 bg-lime-500 px-2 sm:px-3 py-1 sm:py-1.5 rounded-full shadow-sm">
               <span className="w-2 h-2 bg-black rounded-full animate-pulse"></span>
               <span className="text-black text-xs font-semibold tracking-wide">LIVE</span>
             </div>
@@ -71,19 +71,19 @@ export default function Header() {
                   <div className="relative">
                     <button
                       onClick={() => setShowDropdown(!showDropdown)}
-                      className="flex items-center gap-2 px-3 py-2 group relative overflow-hidden rounded-xl transition-all duration-300 border border-slate-700 hover:border-lime-500/50 bg-linear-to-br from-slate-800/50 to-slate-900/50 hover:from-slate-800 hover:to-slate-800/80 shadow-sm hover:shadow-lg hover:shadow-lime-500/10"
+                      className="flex items-center gap-1 sm:gap-2 px-2 sm:px-3 py-2 group relative overflow-hidden rounded-xl transition-all duration-300 border border-slate-700 hover:border-lime-500/50 bg-linear-to-br from-slate-800/50 to-slate-900/50 hover:from-slate-800 hover:to-slate-800/80 shadow-sm hover:shadow-lg hover:shadow-lime-500/10"
                     >
                       {/* Background linear effect on hover */}
                       <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-linear-to-r from-lime-500/10 via-transparent to-transparent" />
                       
                       {/* Avatar */}
-                      <div className="relative w-9 h-9 rounded-lg flex items-center justify-center font-bold text-sm bg-linear-to-br from-lime-400 to-lime-500 text-black shadow-lg shadow-lime-500/30 group-hover:shadow-lime-500/50 transition-all duration-300 shrink-0">
+                      <div className="relative w-8 h-8 sm:w-9 sm:h-9 rounded-lg flex items-center justify-center font-bold text-xs sm:text-sm bg-linear-to-br from-lime-400 to-lime-500 text-black shadow-lg shadow-lime-500/30 group-hover:shadow-lime-500/50 transition-all duration-300 shrink-0">
                         {user.email.charAt(0).toUpperCase()}
                       </div>
                       
-                      {/* User Info */}
+                      {/* User Info - hidden on small screens */}
                       <div className="hidden sm:flex flex-col items-start min-w-0 relative z-10">
-                        <span className="text-sm font-semibold text-white truncate max-w-[120px]">
+                        <span className="text-xs sm:text-sm font-semibold text-white truncate max-w-[100px]">
                           {user.username || user.email.split('@')[0]}
                         </span>
                         {(user.role === 'admin' || user.role === 'superadmin') && (
@@ -101,15 +101,15 @@ export default function Header() {
 
                     {/* Dropdown Menu */}
                     {showDropdown && (
-                      <div className="absolute right-0 mt-3 w-64 origin-top-right rounded-xl border border-slate-700/50 bg-slate-900/95 backdrop-blur-xl shadow-2xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                      <div className="absolute right-0 mt-3 w-56 sm:w-64 origin-top-right rounded-xl border border-slate-700/50 bg-slate-900/95 backdrop-blur-xl shadow-2xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
                         {/* User Card Header */}
-                        <div className="p-4 bg-linear-to-b from-slate-800/50 to-transparent border-b border-slate-700/50">
-                          <div className="flex items-center gap-3 mb-3">
-                            <div className="w-12 h-12 rounded-lg flex items-center justify-center font-bold text-lg bg-linear-to-br from-lime-400 to-lime-500 text-black shadow-lg shadow-lime-500/30">
+                        <div className="p-3 sm:p-4 bg-linear-to-b from-slate-800/50 to-transparent border-b border-slate-700/50">
+                          <div className="flex items-center gap-2 sm:gap-3 mb-3">
+                            <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg flex items-center justify-center font-bold text-base sm:text-lg bg-linear-to-br from-lime-400 to-lime-500 text-black shadow-lg shadow-lime-500/30">
                               {user.username?.charAt(0).toUpperCase() || user.email.charAt(0).toUpperCase()}
                             </div>
                             <div className="flex-1 min-w-0">
-                              <p className="text-white font-semibold text-sm truncate">{user.username || user.email}</p>
+                              <p className="text-white font-semibold text-xs sm:text-sm truncate">{user.username || user.email}</p>
                               <p className={`text-xs font-bold mt-0.5 flex items-center gap-1 ${user.role === 'superadmin' ? 'text-red-400' : user.role === 'admin' ? 'text-amber-400' : 'text-lime-400'}`}>
                                 <span className={`w-2 h-2 rounded-full ${user.role === 'superadmin' ? 'bg-red-400' : user.role === 'admin' ? 'bg-amber-400' : 'bg-lime-400'}`} />
                                 {user.role === 'superadmin' ? 'Super Administrator' : user.role === 'admin' ? 'Administrator' : 'User'}
@@ -124,13 +124,13 @@ export default function Header() {
                             <Link
                               href="/admin-requests"
                               onClick={() => setShowDropdown(false)}
-                              className="w-full text-left px-4 py-3 text-lime-400 hover:bg-lime-500/10 hover:text-lime-300 transition-all duration-200 border-b border-slate-700/30 font-medium flex items-center gap-3 group"
+                              className="w-full text-left px-3 sm:px-4 py-2 sm:py-3 text-lime-400 hover:bg-lime-500/10 hover:text-lime-300 transition-all duration-200 border-b border-slate-700/30 font-medium text-sm sm:text-base flex items-center gap-2 sm:gap-3 group"
                             >
-                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                               </svg>
                               <span>Approve Admin Requests</span>
-                              <svg className="w-4 h-4 ml-auto opacity-0 group-hover:opacity-100 transform group-hover:translate-x-1 transition-all" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <svg className="w-4 h-4 ml-auto opacity-0 group-hover:opacity-100 transform group-hover:translate-x-1 transition-all hidden sm:block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                               </svg>
                             </Link>
@@ -140,13 +140,13 @@ export default function Header() {
                         {/* Logout Button */}
                         <button
                           onClick={handleLogout}
-                          className="w-full text-left px-4 py-3 text-red-400 hover:bg-red-500/10 hover:text-red-300 transition-all duration-200 font-medium flex items-center gap-3 group"
+                          className="w-full text-left px-3 sm:px-4 py-2 sm:py-3 text-red-400 hover:bg-red-500/10 hover:text-red-300 transition-all duration-200 font-medium text-sm sm:text-base flex items-center gap-2 sm:gap-3 group"
                         >
-                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
                           </svg>
                           <span>Logout</span>
-                          <svg className="w-4 h-4 ml-auto opacity-0 group-hover:opacity-100 transform group-hover:translate-x-1 transition-all" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <svg className="w-4 h-4 ml-auto opacity-0 group-hover:opacity-100 transform group-hover:translate-x-1 transition-all hidden sm:block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                           </svg>
                         </button>
@@ -154,16 +154,16 @@ export default function Header() {
                     )}
                   </div>
                 ) : (
-                  <div className="flex items-center space-x-2">
+                  <div className="flex items-center gap-1 sm:gap-2">
                     <Link
                       href="/login"
-                      className="px-4 py-2 text-lime-400 hover:text-lime-300 font-semibold transition"
+                      className="px-2 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm text-lime-400 hover:text-lime-300 font-semibold transition"
                     >
                       Login
                     </Link>
                     <Link
                       href="/register"
-                      className="px-4 py-2 bg-lime-500 hover:bg-lime-600 text-black rounded-lg font-semibold transition"
+                      className="px-2 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm bg-lime-500 hover:bg-lime-600 text-black rounded-lg font-semibold transition"
                     >
                       Register
                     </Link>
@@ -173,6 +173,26 @@ export default function Header() {
             )}
           </div>
         </div>
+
+        {/* Mobile Navigation */}
+        <nav className="md:hidden flex items-center space-x-1 border-t border-slate-700/30 bg-slate-900/30 -mx-3 sm:-mx-4 px-3 sm:px-4 py-2">
+          {navLinks.map((link) => {
+            const isActive = pathname === link.href;
+            return (
+              <Link
+                key={link.href}
+                href={link.href}
+                className={`flex-1 text-center px-2 py-1.5 rounded text-xs sm:text-sm font-medium transition-all duration-200 ${
+                  isActive
+                    ? 'bg-lime-500 text-black'
+                    : 'text-gray-400 hover:bg-slate-800 hover:text-lime-400'
+                }`}
+              >
+                {link.label}
+              </Link>
+            );
+          })}
+        </nav>
       </div>
     </header>
   );

@@ -145,17 +145,17 @@ export default function AdminRequestsPage() {
       <div className="container mx-auto px-4 py-8">
         <div className="max-w-4xl mx-auto">
           {/* Header */}
-          <div className="mb-8">
-            <h1 className="text-4xl font-bold text-lime-400 mb-2">Admin Requests</h1>
-            <p className="text-gray-400">Review and approve new admin registration requests</p>
+          <div className="mb-6 sm:mb-8">
+            <h1 className="text-3xl sm:text-4xl font-bold text-lime-400 mb-2">Admin Requests</h1>
+            <p className="text-gray-400 text-sm sm:text-base">Review and approve new admin registration requests</p>
           </div>
 
           {/* Back Button */}
           <button
             onClick={() => router.push('/matches')}
-            className="mb-6 inline-flex items-center text-lime-400 hover:text-lime-300 font-semibold transition-colors"
+            className="mb-6 inline-flex items-center text-lime-400 hover:text-lime-300 font-semibold transition-colors text-sm sm:text-base"
           >
-            <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-4 h-4 sm:w-5 sm:h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
             </svg>
             Back to Matches
@@ -163,64 +163,64 @@ export default function AdminRequestsPage() {
 
           {/* Messages */}
           {message && (
-            <div className="mb-6 p-4 bg-green-500/20 border border-green-500 rounded-lg">
-              <p className="text-green-400 font-medium">{message}</p>
+            <div className="mb-6 p-3 sm:p-4 bg-green-500/20 border border-green-500 rounded-lg">
+              <p className="text-green-400 font-medium text-sm sm:text-base">{message}</p>
             </div>
           )}
 
           {error && (
-            <div className="mb-6 p-4 bg-red-500/20 border border-red-500 rounded-lg">
-              <p className="text-red-400 font-medium">{error}</p>
+            <div className="mb-6 p-3 sm:p-4 bg-red-500/20 border border-red-500 rounded-lg">
+              <p className="text-red-400 font-medium text-sm sm:text-base">{error}</p>
             </div>
           )}
 
           {/* Loading */}
           {loading && (
             <div className="flex items-center justify-center py-12">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-lime-500"></div>
+              <div className="animate-spin rounded-full h-10 w-10 sm:h-12 sm:w-12 border-b-2 border-lime-500"></div>
             </div>
           )}
 
           {/* Requests List */}
           {!loading && requests.length === 0 && (
-            <div className="bg-slate-900 rounded-xl border border-slate-800 p-8 text-center">
-              <svg className="w-12 h-12 text-gray-500 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="bg-slate-900 rounded-lg sm:rounded-xl border border-slate-800 p-6 sm:p-8 text-center">
+              <svg className="w-10 h-10 sm:w-12 sm:h-12 text-gray-500 mx-auto mb-3 sm:mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
-              <p className="text-gray-400 text-lg">No pending admin requests</p>
+              <p className="text-gray-400 text-base sm:text-lg">No pending admin requests</p>
             </div>
           )}
 
           {!loading && requests.length > 0 && (
-            <div className="space-y-4">
+            <div className="space-y-3 sm:space-y-4">
               {requests.map((request) => (
-                <div key={request.id} className="bg-slate-900 rounded-xl border border-slate-800 p-6">
-                  <div className="flex justify-between items-start mb-4">
-                    <div>
-                      <h3 className="text-xl font-semibold text-white mb-2">{request.email}</h3>
+                <div key={request.id} className="bg-slate-900 rounded-lg sm:rounded-xl border border-slate-800 p-4 sm:p-6">
+                  <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start mb-4 gap-3 sm:gap-0">
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-lg sm:text-xl font-semibold text-white mb-1 break-all">{request.email}</h3>
                       {request.name && (
-                        <p className="text-gray-400 text-sm">Name: {request.name}</p>
+                        <p className="text-gray-400 text-xs sm:text-sm">Name: {request.name}</p>
                       )}
                       <p className="text-gray-500 text-xs mt-2">
                         Requested: {new Date(request.created_at).toLocaleDateString()} at {new Date(request.created_at).toLocaleTimeString()}
                       </p>
                     </div>
-                    <span className="bg-yellow-500/20 border border-yellow-500 px-3 py-1 rounded text-yellow-400 text-sm font-medium">
+                    <span className="bg-yellow-500/20 border border-yellow-500 px-3 py-1 rounded text-yellow-400 text-xs sm:text-sm font-medium whitespace-nowrap">
                       Pending
                     </span>
                   </div>
 
                   {/* Action Buttons */}
-                  <div className="flex gap-3 pt-4 border-t border-slate-700">
+                  <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 pt-4 border-t border-slate-700">
                     <button
                       onClick={() => handleApprove(request.id)}
-                      className="flex-1 px-4 py-2 bg-lime-500 hover:bg-lime-600 text-black font-semibold rounded-lg transition-colors"
+                      className="flex-1 px-3 sm:px-4 py-2 bg-lime-500 hover:bg-lime-600 text-black font-semibold rounded-lg transition-colors text-sm sm:text-base"
                     >
                       Approve
                     </button>
                     <button
                       onClick={() => handleReject(request.id)}
-                      className="flex-1 px-4 py-2 bg-red-500 hover:bg-red-600 text-white font-semibold rounded-lg transition-colors"
+                      className="flex-1 px-3 sm:px-4 py-2 bg-red-500 hover:bg-red-600 text-white font-semibold rounded-lg transition-colors text-sm sm:text-base"
                     >
                       Reject
                     </button>

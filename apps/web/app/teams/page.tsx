@@ -104,31 +104,31 @@ export default function Teams() {
 
   return (
     <div className="min-h-screen bg-black">
-      <div className="container mx-auto px-4 py-12">
-        <div className="mb-12">
-          <div className="inline-block mb-4">
-            <span className="px-4 py-2 bg-slate-900 text-lime-400 rounded-full text-sm font-medium border border-lime-500">
+      <div className="container mx-auto px-4 py-8 sm:py-12">
+        <div className="mb-8 sm:mb-12">
+          <div className="inline-block mb-3 sm:mb-4">
+            <span className="px-3 sm:px-4 py-2 bg-slate-900 text-lime-400 rounded-full text-xs sm:text-sm font-medium border border-lime-500">
               Team Directory
             </span>
           </div>
-          <h1 className="text-5xl font-bold text-white mb-4">
+          <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold text-white mb-2 sm:mb-4">
             Cricket Teams
           </h1>
-          <p className="text-xl text-gray-400">
+          <p className="text-base sm:text-lg md:text-xl text-gray-400">
             Explore all registered teams and their information
           </p>
         </div>
 
         {loading ? (
-          <div className="flex flex-col items-center justify-center py-32">
-            <div className="animate-spin rounded-full h-16 w-16 border-4 border-lime-500 border-t-transparent mb-4" />
-            <p className="text-gray-400 font-medium">Loading teams...</p>
+          <div className="flex flex-col items-center justify-center py-20 sm:py-32">
+            <div className="animate-spin rounded-full h-12 w-12 sm:h-16 sm:w-16 border-4 border-lime-500 border-t-transparent mb-4" />
+            <p className="text-gray-400 font-medium text-sm sm:text-base">Loading teams...</p>
           </div>
         ) : teams.length === 0 ? (
-          <div className="bg-slate-900 rounded-2xl shadow-lg border-2 border-slate-800 p-16 text-center max-w-2xl mx-auto">
-            <div className="w-20 h-20 bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-6">
+          <div className="bg-slate-900 rounded-xl sm:rounded-2xl shadow-lg border-2 border-slate-800 p-8 sm:p-16 text-center max-w-2xl mx-auto">
+            <div className="w-16 h-16 sm:w-20 sm:h-20 bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-4 sm:mb-6">
               <svg
-                className="w-10 h-10 text-lime-500"
+                className="w-8 h-8 sm:w-10 sm:h-10 text-lime-500"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -141,15 +141,15 @@ export default function Teams() {
                 />
               </svg>
             </div>
-            <h3 className="text-2xl font-bold text-white mb-2">
+            <h3 className="text-xl sm:text-2xl font-bold text-white mb-2">
               No Teams Available
             </h3>
-            <p className="text-gray-400">
+            <p className="text-gray-400 text-sm sm:text-base">
               Teams will appear here once they are registered
             </p>
           </div>
         ) : (
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
             {teams.map((team, index) => {
               const colorScheme: ColorScheme =
                 teamColors[index % teamColors.length]!;
@@ -157,32 +157,32 @@ export default function Teams() {
               return (
                 <div
                   key={team.id}
-                  className={`group bg-slate-900 rounded-2xl border-2 border-slate-800 hover:border-lime-500 hover:shadow-2xl transition-all duration-300 overflow-hidden transform hover:-translate-y-2`}
+                  className={`group bg-slate-900 rounded-lg sm:rounded-2xl border-2 border-slate-800 hover:border-lime-500 hover:shadow-2xl transition-all duration-300 overflow-hidden transform hover:-translate-y-2`}
                 >
                   <div
                     className={`h-2 bg-linear-to-r ${colorScheme.linear}`}
                   />
 
-                  <div className="p-6">
+                  <div className="p-4 sm:p-6">
                     <div
-                      className={`w-16 h-16 bg-linear-to-br ${colorScheme.linear} rounded-2xl flex items-center justify-center mb-4 shadow-lg group-hover:scale-110 transition-transform duration-300`}
+                      className={`w-12 h-12 sm:w-16 sm:h-16 bg-linear-to-br ${colorScheme.linear} rounded-lg sm:rounded-2xl flex items-center justify-center mb-3 sm:mb-4 shadow-lg group-hover:scale-110 transition-transform duration-300`}
                     >
-                      <span className="text-2xl font-bold text-white">
+                      <span className="text-lg sm:text-2xl font-bold text-white">
                         {team.name.substring(0, 2).toUpperCase()}
                       </span>
                     </div>
 
                     <h2
-                      className={`text-2xl font-bold ${colorScheme.text} mb-2 group-hover:text-gray-900 transition-colors`}
+                      className={`text-lg sm:text-2xl font-bold ${colorScheme.text} mb-2 group-hover:text-gray-900 transition-colors`}
                     >
                       {team.name}
                     </h2>
 
                     <div
-                      className={`flex items-center gap-2 text-sm ${colorScheme.text} mb-4`}
+                      className={`flex items-center gap-2 text-xs sm:text-sm ${colorScheme.text} mb-4`}
                     >
                       <svg
-                        className="w-4 h-4"
+                        className="w-3 h-3 sm:w-4 sm:h-4"
                         fill="none"
                         stroke="currentColor"
                         viewBox="0 0 24 24"
@@ -201,7 +201,7 @@ export default function Teams() {
                       className={`
                         w-full
                         ${colorScheme.bg} ${colorScheme.text}
-                        py-2.5 px-4 rounded-xl font-semibold
+                        py-2 sm:py-2.5 px-3 sm:px-4 rounded-lg sm:rounded-xl font-semibold text-xs sm:text-sm
                         border-2 ${colorScheme.border}
                         hover:bg-linear-to-r ${colorScheme.hoverlinear}
                         hover:text-white hover:border-transparent

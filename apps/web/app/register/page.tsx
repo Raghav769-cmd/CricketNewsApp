@@ -74,22 +74,22 @@ export default function Register() {
 
 
   return (
-    <div className="min-h-screen bg-linear-to-br from-black via-slate-900 to-black flex items-center justify-center p-4">
+    <div className="min-h-screen bg-linear-to-br from-black via-slate-900 to-black flex items-center justify-center p-3 sm:p-4 md:p-6">
       <div className="w-full max-w-md">
-        <div className="bg-slate-900/80 backdrop-blur-md rounded-2xl shadow-2xl border border-slate-700/50 p-8">
+        <div className="bg-slate-900/80 backdrop-blur-md rounded-2xl shadow-2xl border border-slate-700/50 p-6 sm:p-8">
           {/* Logo and Header */}
-          <div className="mb-8 text-center">
-            <div className="inline-flex items-center justify-center w-16 h-16 bg-linear-to-br from-lime-400 to-lime-500 rounded-xl mb-4 shadow-lg shadow-lime-500/30">
-              <svg className="w-8 h-8 text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="mb-6 sm:mb-8 text-center">
+            <div className="inline-flex items-center justify-center w-14 h-14 sm:w-16 sm:h-16 bg-linear-to-br from-lime-400 to-lime-500 rounded-lg sm:rounded-xl mb-3 sm:mb-4 shadow-lg shadow-lime-500/30">
+              <svg className="w-7 h-7 sm:w-8 sm:h-8 text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
               </svg>
             </div>
-            <h1 className="text-4xl font-bold text-white mb-2">CricketLive</h1>
-            <p className="text-gray-400 text-sm">Join the cricket community</p>
+            <h1 className="text-3xl sm:text-4xl font-bold text-white mb-2">CricketLive</h1>
+            <p className="text-gray-400 text-xs sm:text-sm">Join the cricket community</p>
           </div>
 
           {/* Form */}
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-3 sm:space-y-4">
             {/* Server Error Alert */}
             {serverError && (
               <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg flex items-start space-x-3 animate-in fade-in slide-in-from-top-1">
@@ -106,7 +106,7 @@ export default function Register() {
                 type="text"
                 {...register('email')}
                 placeholder="you@example.com"
-                className={`w-full px-4 py-3 border rounded-lg bg-slate-800/50 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-lime-500 focus:border-transparent transition-all duration-200 ${
+                className={`w-full px-3 sm:px-4 py-2 sm:py-3 border rounded-lg bg-slate-800/50 text-white placeholder-gray-500 text-sm sm:text-base focus:outline-none focus:ring-2 focus:ring-lime-500 focus:border-transparent transition-all duration-200 ${
                   errors.email ? 'border-red-500' : 'border-slate-700'
                 }`}
               />
@@ -123,7 +123,7 @@ export default function Register() {
                 type="text"
                 {...register('username')}
                 placeholder="your_username"
-                className={`w-full px-4 py-3 border rounded-lg bg-slate-800/50 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-lime-500 focus:border-transparent transition-all duration-200 ${
+                className={`w-full px-3 sm:px-4 py-2 sm:py-3 border rounded-lg bg-slate-800/50 text-white placeholder-gray-500 text-sm sm:text-base focus:outline-none focus:ring-2 focus:ring-lime-500 focus:border-transparent transition-all duration-200 ${
                   errors.username ? 'border-red-500' : 'border-slate-700'
                 }`}
               />
@@ -133,7 +133,7 @@ export default function Register() {
             <FormField label="User Role" required error={errors.role?.message}>
               <select
                 {...register('role')}
-                className={`w-full px-4 py-3 border rounded-lg bg-slate-800/50 text-white focus:outline-none focus:ring-2 focus:ring-lime-500 focus:border-transparent transition-all duration-200 ${
+                className={`w-full px-3 sm:px-4 py-2 sm:py-3 border rounded-lg bg-slate-800/50 text-white text-sm sm:text-base focus:outline-none focus:ring-2 focus:ring-lime-500 focus:border-transparent transition-all duration-200 ${
                   errors.role ? 'border-red-500' : 'border-slate-700'
                 }`}
               >
@@ -153,7 +153,7 @@ export default function Register() {
                 type="password"
                 {...register('password')}
                 placeholder="••••••••"
-                className={`w-full px-4 py-3 border rounded-lg bg-slate-800/50 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-lime-500 focus:border-transparent transition-all duration-200 ${
+                className={`w-full px-3 sm:px-4 py-2 sm:py-3 border rounded-lg bg-slate-800/50 text-white placeholder-gray-500 text-sm sm:text-base focus:outline-none focus:ring-2 focus:ring-lime-500 focus:border-transparent transition-all duration-200 ${
                   errors.password ? 'border-red-500' : 'border-slate-700'
                 }`}
               />
@@ -165,7 +165,7 @@ export default function Register() {
                 type="password"
                 {...register('confirmPassword')}
                 placeholder="••••••••"
-                className={`w-full px-4 py-3 border rounded-lg bg-slate-800/50 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-lime-500 focus:border-transparent transition-all duration-200 ${
+                className={`w-full px-3 sm:px-4 py-2 sm:py-3 border rounded-lg bg-slate-800/50 text-white placeholder-gray-500 text-sm sm:text-base focus:outline-none focus:ring-2 focus:ring-lime-500 focus:border-transparent transition-all duration-200 ${
                   errors.confirmPassword ? 'border-red-500' : 'border-slate-700'
                 }`}
               />
@@ -175,7 +175,7 @@ export default function Register() {
             <button
               type="submit"
               disabled={isSubmitting}
-              className="w-full px-4 py-3 mt-6 bg-linear-to-r from-lime-500 to-lime-600 hover:from-lime-600 hover:to-lime-700 disabled:from-lime-500/50 disabled:to-lime-600/50 text-black font-bold rounded-lg transition-all duration-200 shadow-lg hover:shadow-xl disabled:shadow-none flex items-center justify-center space-x-2"
+              className="w-full px-4 py-3 mt-4 sm:mt-6 bg-linear-to-r from-lime-500 to-lime-600 hover:from-lime-600 hover:to-lime-700 disabled:from-lime-500/50 disabled:to-lime-600/50 text-black font-bold rounded-lg transition-all duration-200 shadow-lg hover:shadow-xl disabled:shadow-none flex items-center justify-center space-x-2 text-sm sm:text-base"
             >
               {isSubmitting ? (
                 <>
@@ -190,7 +190,7 @@ export default function Register() {
 
           {/* Sign In Link */}
           <div className="mt-6 text-center">
-            <p className="text-gray-400 text-sm">
+            <p className="text-gray-400 text-xs sm:text-sm">
               Already have an account?{' '}
               <Link
                 href="/login"
