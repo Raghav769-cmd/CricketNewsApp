@@ -11,7 +11,7 @@ const addMatchSchema = z.object({
   team1: z.string().min(1, 'Team 1 is required'),
   team2: z.string().min(1, 'Team 2 is required'),
   date: z.string().min(1, 'Date is required'),
-  venue: z.string().min(3, 'Venue must be at least 3 characters').max(100, 'Venue must be at most 100 characters'),
+  stadium: z.string().min(1, 'Stadium is required'),
   score: z.string(),
   overs_per_inning: z.string().min(1, 'Overs per inning is required'),
 }).refine((data) => data.team1 !== data.team2, {
@@ -21,8 +21,17 @@ const addMatchSchema = z.object({
 
 type AddMatchFormData = z.infer<typeof addMatchSchema>;
 
+interface Stadium {
+  id: number;
+  name: string;
+  city?: string;
+  country?: string;
+  capacity?: number;
+}
+
 interface AddMatchFormProps {
   teams: Array<{ id: number; name: string }>;
+  stadiums: Stadium[];
   onClose: () => void;
   onSubmit: (data: AddMatchFormData) => Promise<void>;
   isSubmitting: boolean;
@@ -30,6 +39,7 @@ interface AddMatchFormProps {
 
 export const AddMatchForm: React.FC<AddMatchFormProps> = ({
   teams,
+  stadiums,
   onClose,
   onSubmit,
   isSubmitting,
@@ -46,7 +56,7 @@ export const AddMatchForm: React.FC<AddMatchFormProps> = ({
       team1: '',
       team2: '',
       date: '',
-      venue: '',
+      stadium: '',
       score: '0-0',
       overs_per_inning: '20',
     },
@@ -140,16 +150,22 @@ export const AddMatchForm: React.FC<AddMatchFormProps> = ({
             />
           </FormField>
 
-          {/* Venue */}
-          <FormField label="Venue" required error={errors.venue?.message}>
-            <input
-              type="text"
-              placeholder="e.g., Lord's Cricket Ground"
-              {...register('venue')}
+          {/* Stadium */}
+          <FormField label="Stadium" required error={errors.stadium?.message}>
+            <select
+              {...register('stadium')}
               className={`w-full px-4 py-3 border rounded-lg bg-slate-800/50 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-lime-500 focus:border-transparent transition-all duration-200 ${
-                errors.venue ? 'border-red-500' : 'border-slate-700'
+                errors.stadium ? 'border-red-500' : 'border-slate-700'
               }`}
-            />
+            >
+              <option value="">Select Stadium</option>
+              {stadiums.map((stadium) => (
+                <option key={stadium.id} value={stadium.id}>
+                  {stadium.name}
+                  {stadium.city && ` - ${stadium.city}`}
+                </option>
+              ))}
+            </select>
           </FormField>
 
           {/* Two Column Layout: Initial Score & Overs Per Inning */}
@@ -176,10 +192,9 @@ export const AddMatchForm: React.FC<AddMatchFormProps> = ({
                 }`}
               >
                 <option value="1">1 Over (Testing)</option>
-                <option value="5">5 Overs</option>
-                <option value="10">10 Overs</option>
                 <option value="20">20 Overs (T20)</option>
                 <option value="50">50 Overs (ODI)</option>
+                <option value='90'>90 Overs (Test)</option>
               </select>
             </FormField>
           </div>

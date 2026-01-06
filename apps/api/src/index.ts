@@ -8,6 +8,7 @@ import { setupSocket } from './server.ts';
 import simulationRouter from './routes/simulation.ts';
 import cors from 'cors';
 import descriptionsRouter from './routes/playerDescriptions.ts';
+import stadiumsRouter from './routes/stadiums.ts';
 
 const app = express();
 const server = http.createServer(app);
@@ -23,6 +24,7 @@ app.use('/api/auth', authRouter);
 app.use('/api/matches', matchesRouter);
 app.use('/api/teams', teamsRouter);
 app.use('/api/players', playersRouter);
+app.use('/api/stadiums', stadiumsRouter);
 app.use('/api/simulation', simulationRouter);
 app.use('/api', descriptionsRouter);
 

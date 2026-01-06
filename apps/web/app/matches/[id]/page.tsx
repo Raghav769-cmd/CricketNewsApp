@@ -173,6 +173,12 @@ export default function MatchDetailPage() {
             await fetchAll();
           }
         });
+        socket.on('matchComplete', async (data: any) => {
+          if (data && Number(data.matchId) === matchId) {
+            console.log('🏆 Match completed!', data);
+            await fetchAll();
+          }
+        });
       } catch (err) {
         console.error('socket init failed:', err);
       }
@@ -245,8 +251,13 @@ export default function MatchDetailPage() {
                   </div>
                 </div>
                 <span className="px-3 sm:px-4 py-1.5 sm:py-2 bg-black text-lime-400 rounded-full text-xs sm:text-sm font-semibold shadow-md shrink-0">
-                  {match?.status || 'LIVE'}
+                  {match?.match_status === 'completed' ? '✅ COMPLETED' : match?.status || 'LIVE'}
                 </span>
+                {match?.match_status === 'completed' && match?.result_description && (
+                  <span className="px-3 sm:px-4 py-1.5 sm:py-2 bg-yellow-900 text-yellow-300 rounded-full text-xs sm:text-sm font-semibold shadow-md shrink-0">
+                    {match.result_description}
+                  </span>
+                )}
               </div>
 
                 {/* Live Score Display */}
@@ -284,6 +295,33 @@ export default function MatchDetailPage() {
               <div className="animate-spin rounded-full h-10 w-10 sm:h-12 sm:w-12 border-4 border-lime-500 border-t-transparent"></div>
             </div>
           ) : (
+            <>
+              {/* Match Completion Banner */}
+              {match?.match_status === 'completed' && (
+                <div className="bg-linear-to-r from-yellow-900/80 to-amber-900/80 border-2 border-yellow-500 rounded-lg sm:rounded-xl p-4 sm:p-6 mb-4 sm:mb-6 shadow-lg">
+                  <div className="flex items-start sm:items-center gap-3 sm:gap-4">
+                    <div className="shrink-0">
+                      <svg className="w-6 h-6 sm:w-8 sm:h-8 text-yellow-400 animate-bounce" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                      </svg>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-lg sm:text-xl font-bold text-yellow-300 mb-1">
+                        🏆 Match Completed!
+                      </h3>
+                      <p className="text-yellow-100 text-sm sm:text-base">
+                        {match?.result_description || 'Match has concluded'}
+                      </p>
+                      {match?.completed_at && (
+                        <p className="text-yellow-200/70 text-xs sm:text-sm mt-1">
+                          Completed: {new Date(match.completed_at).toLocaleString()}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
             <div className="space-y-4 sm:space-y-6">
               {/* Scorecard Section */}
               {scorecard && (
@@ -577,6 +615,7 @@ export default function MatchDetailPage() {
                 </div>
               )}
             </div>
+            </>
           )}
         </div>
       </div>

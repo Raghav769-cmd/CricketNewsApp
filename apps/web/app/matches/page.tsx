@@ -75,6 +75,14 @@ interface Team {
   name: string;
 }
 
+interface Stadium {
+  id: number;
+  name: string;
+  city?: string;
+  country?: string;
+  capacity?: number;
+}
+
 export default function Matches() {
   const router = useRouter();
   const { user, isAuthenticated, token, loading: authLoading } = useAuth();
@@ -90,6 +98,7 @@ export default function Matches() {
   const expandedRef = useRef<number | null>(null);
   const socketRef = useRef<any>(null);
   const [teams, setTeams] = useState<Team[]>([]);
+  const [stadiums, setStadiums] = useState<Stadium[]>([]);
   const [showAddMatchForm, setShowAddMatchForm] = useState<boolean>(false);
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [deletingMatchId, setDeletingMatchId] = useState<number | null>(null);
@@ -214,16 +223,34 @@ export default function Matches() {
     }
   };
 
+  const fetchStadiums = async () => {
+    try {
+      const response = await fetch(`${apiBase}/api/stadiums`);
+      if (response.ok) {
+        const data: Stadium[] = await response.json();
+        setStadiums(data);
+      }
+    } catch (error) {
+      console.error("Error fetching stadiums:", error);
+    }
+  };
+
   const handleAddMatch = async (formData: {
     team1: string;
     team2: string;
     date: string;
-    venue: string;
+    stadium: string;
     score?: string;
     overs_per_inning?: string;
   }) => {
     setSubmitting(true);
     try {
+      // Get stadium name from selected stadium ID
+      const selectedStadium = stadiums.find(
+        (s) => s.id === parseInt(formData.stadium)
+      );
+      const venueName = selectedStadium?.name || "Unknown Stadium";
+
       const response = await fetch(`${apiBase}/api/matches`, {
         method: "POST",
         headers: {
@@ -234,7 +261,8 @@ export default function Matches() {
           team1: parseInt(formData.team1),
           team2: parseInt(formData.team2),
           date: formData.date,
-          venue: formData.venue,
+          venue: venueName,
+          stadium_id: parseInt(formData.stadium),
           score: formData.score || "0-0",
           overs_per_inning: parseInt(formData.overs_per_inning || '20'),
         }),
@@ -309,6 +337,7 @@ export default function Matches() {
 
   useEffect(() => {
     fetchTeams();
+    fetchStadiums();
   }, []);
 
   useEffect(() => {
@@ -813,6 +842,7 @@ export default function Matches() {
       {showAddMatchForm && (
         <AddMatchForm
           teams={teams}
+          stadiums={stadiums}
           onClose={() => setShowAddMatchForm(false)}
           onSubmit={handleAddMatch}
           isSubmitting={submitting}

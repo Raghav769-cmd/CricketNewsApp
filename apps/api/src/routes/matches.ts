@@ -5,6 +5,173 @@ import { verifyToken, isSuperadmin, isAdmin, isAuthenticated } from "../middlewa
 
 const router: Router = Router();
 
+async function checkAndCompleteMatchIfNeeded(matchId: number) {
+  try {
+    const matchResult = await pool.query(
+      `SELECT m.*, 
+              t1.name AS team1_name, 
+              t2.name AS team2_name,
+              m.inning1_team_id
+       FROM matches m
+       JOIN teams t1 ON t1.id = m.team1
+       JOIN teams t2 ON t2.id = m.team2
+       WHERE m.id = $1`,
+      [matchId]
+    );
+
+    if (matchResult.rows.length === 0) {
+      return null;
+    }
+
+    const match = matchResult.rows[0];
+    
+    match.team1 = parseInt(match.team1);
+    match.team2 = parseInt(match.team2);
+    match.inning1_team_id = match.inning1_team_id ? parseInt(match.inning1_team_id) : null;
+
+    if (match.current_inning !== 2 || match.match_status === 'completed') {
+      return null;
+    }
+
+    // Get current scores for both teams - SEPARATED BY INNING
+    const inning1TeamId = match.inning1_team_id || match.team1;
+    const inning2TeamId = inning1TeamId === match.team1 ? match.team2 : match.team1;
+
+    // Query scores for INNING 1 ONLY
+    const inning1ScoreQuery = `
+      SELECT 
+        o.batting_team_id,
+        SUM(b.runs + COALESCE(CAST(b.extras AS INTEGER), 0)) as total_runs,
+        COUNT(CASE WHEN b.is_wicket THEN 1 END) as wickets
+      FROM overs o
+      LEFT JOIN balls b ON b.over_id = o.id
+      WHERE o.match_id = $1 AND o.batting_team_id = $2
+      GROUP BY o.batting_team_id
+    `;
+
+    const inning1Result = await pool.query(inning1ScoreQuery, [matchId, inning1TeamId]);
+    let inning1Score = 0;
+    let inning1Wickets = 0;
+    
+    if (inning1Result.rows.length > 0) {
+      inning1Score = parseInt(inning1Result.rows[0].total_runs) || 0;
+      inning1Wickets = parseInt(inning1Result.rows[0].wickets) || 0;
+    }
+
+    const inning2ScoreQuery = `
+      SELECT 
+        o.batting_team_id,
+        SUM(b.runs + COALESCE(CAST(b.extras AS INTEGER), 0)) as total_runs,
+        COUNT(CASE WHEN b.is_wicket THEN 1 END) as wickets
+      FROM overs o
+      LEFT JOIN balls b ON b.over_id = o.id
+      WHERE o.match_id = $1 AND o.batting_team_id = $2
+      GROUP BY o.batting_team_id
+    `;
+
+    const inning2Result = await pool.query(inning2ScoreQuery, [matchId, inning2TeamId]);
+    let inning2Score = 0;
+    let inning2Wickets = 0;
+    
+    if (inning2Result.rows.length > 0) {
+      inning2Score = parseInt(inning2Result.rows[0].total_runs) || 0;
+      inning2Wickets = parseInt(inning2Result.rows[0].wickets) || 0;
+    }
+
+    const allScoresQuery = `
+      SELECT 
+        o.batting_team_id,
+        SUM(b.runs + COALESCE(CAST(b.extras AS INTEGER), 0)) as total_runs,
+        COUNT(CASE WHEN b.is_wicket THEN 1 END) as wickets
+      FROM overs o
+      LEFT JOIN balls b ON b.over_id = o.id
+      WHERE o.match_id = $1
+      GROUP BY o.batting_team_id
+    `;
+    
+    const allScoresResult = await pool.query(allScoresQuery, [matchId]);
+    let team1TotalScore = 0;
+    let team2TotalScore = 0;
+    let team1TotalWickets = 0;
+    let team2TotalWickets = 0;
+    
+    for (const row of allScoresResult.rows) {
+      const runs = parseInt(row.total_runs) || 0;
+      const wickets = parseInt(row.wickets) || 0;
+
+      if (row.batting_team_id === match.team1) {
+        team1TotalScore = runs;
+        team1TotalWickets = wickets;
+      } else if (row.batting_team_id === match.team2) {
+        team2TotalScore = runs;
+        team2TotalWickets = wickets;
+      }
+    }
+
+    let shouldComplete = false;
+    let winner = null;
+    let result_description = null;
+
+    // Check if chasing team won (Inning 2 score > Inning 1 score)
+    if (inning2Score > inning1Score) {
+      shouldComplete = true;
+      winner = inning2TeamId;
+      const margin = inning2Score - inning1Score;
+      const winnerName = inning2TeamId === match.team1 ? match.team1_name : match.team2_name;
+      result_description = `${winnerName} won by ${margin} runs`;
+    }
+
+    // Check if chasing team all out (10 wickets)
+    if (inning2Wickets >= 10 && !shouldComplete) {
+      shouldComplete = true;
+      winner = inning1TeamId;
+      const margin = inning1Score - inning2Score;
+      const winnerName = inning1TeamId === match.team1 ? match.team1_name : match.team2_name;
+      result_description = `${winnerName} won by ${margin} runs`;
+    }
+
+    if (shouldComplete) {
+      // Update match with completion status
+      const updateResult = await pool.query(
+        `UPDATE matches 
+         SET match_status = 'completed', winner = $1, result_description = $2, completed_at = NOW()
+         WHERE id = $3 
+         RETURNING *`,
+        [winner, result_description, matchId]
+      );
+
+      // Emit socket event for match completion
+      const io = getIO();
+      if (io) {
+        io.to(`match_${matchId}`).emit("matchComplete", {
+          matchId: String(matchId),
+          winner,
+          result_description,
+          team1Score: team1TotalScore,
+          team2Score: team2TotalScore,
+          team1Wickets: team1TotalWickets,
+          team2Wickets: team2TotalWickets,
+        });
+      }
+
+      return {
+        completed: true,
+        match: updateResult.rows[0],
+        scores: {
+          team1: { runs: team1TotalScore, wickets: team1TotalWickets },
+          team2: { runs: team2TotalScore, wickets: team2TotalWickets },
+        },
+        result: result_description,
+      };
+    }
+
+    return { completed: false };
+  } catch (err) {
+    console.error("Error checking match completion:", err);
+    return null;
+  }
+}
+
 // get all matches
 router.get("/", async (req, res) => {
   try {
@@ -20,7 +187,6 @@ router.get("/", async (req, res) => {
       JOIN teams t2 ON t2.id = m.team2
     `);
     res.json(result.rows);
-    // console.log(result.rows);
   } catch (err) {
     console.error(err);
     res.status(500).send("Server Error");
@@ -58,8 +224,8 @@ router.post("/", verifyToken, isSuperadmin, async (req, res) => {
   const { team1, team2, date, venue, score, overs_per_inning } = req.body;
   try {
     const result = await pool.query(
-      "INSERT INTO matches (team1, team2, date, venue, score, overs_per_inning, current_inning, inning1_complete) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *",
-      [team1, team2, date, venue, score, overs_per_inning, 1, false]
+      "INSERT INTO matches (team1, team2, date, venue, score, overs_per_inning, current_inning, inning1_complete, match_status) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *",
+      [team1, team2, date, venue, score, overs_per_inning, 1, false, 'pending']
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -94,7 +260,7 @@ router.put("/:id/inning", verifyToken, isAdmin, async (req, res) => {
   try {
     const result = await pool.query(
       `UPDATE matches 
-       SET inning1_team_id = $1, inning1_complete = true, current_inning = 2 
+       SET inning1_team_id = $1, inning1_complete = true, current_inning = 2, match_status = 'inning2' 
        WHERE id = $2 
        RETURNING *`,
       [battingTeamId, id]
@@ -105,6 +271,111 @@ router.put("/:id/inning", verifyToken, isAdmin, async (req, res) => {
     res.json(result.rows[0]);
   } catch (err) {
     console.error(err);
+    res.status(500).send("Server Error");
+  }
+});
+
+// Complete the match after inning 2 - Admin only
+router.put("/:id/complete", verifyToken, isAdmin, async (req, res) => {
+  const { id } = req.params;
+  try {
+    // Get match details with team names
+    const matchResult = await pool.query(
+      `SELECT 
+        m.*,
+        t1.name AS team1_name,
+        t2.name AS team2_name
+      FROM matches m
+      JOIN teams t1 ON t1.id = m.team1
+      JOIN teams t2 ON t2.id = m.team2
+      WHERE m.id = $1`,
+      [id]
+    );
+    if (matchResult.rows.length === 0) {
+      return res.status(404).send("Match not found");
+    }
+    const match = matchResult.rows[0];
+
+    // Get scores for both teams
+    const scoreQuery = `
+      SELECT 
+        o.batting_team_id,
+        SUM(b.runs + COALESCE(CAST(b.extras AS INTEGER), 0)) as total_runs,
+        COUNT(CASE WHEN b.is_wicket THEN 1 END) as wickets
+      FROM overs o
+      LEFT JOIN balls b ON b.over_id = o.id
+      WHERE o.match_id = $1
+      GROUP BY o.batting_team_id
+      ORDER BY o.batting_team_id
+    `;
+
+    const scoreResult = await pool.query(scoreQuery, [id]);
+    
+    let team1Score = 0;
+    let team2Score = 0;
+    let team1Wickets = 0;
+    let team2Wickets = 0;
+
+    for (const row of scoreResult.rows) {
+      const runs = parseInt(row.total_runs) || 0;
+      const wickets = parseInt(row.wickets) || 0;
+
+      if (row.batting_team_id === match.team1) {
+        team1Score = runs;
+        team1Wickets = wickets;
+      } else if (row.batting_team_id === match.team2) {
+        team2Score = runs;
+        team2Wickets = wickets;
+      }
+    }
+
+    // Determine winner
+    let winner = null;
+    let result_description = "Match Tied";
+
+    if (team1Score > team2Score) {
+      winner = match.team1;
+      const margin = team1Score - team2Score;
+      result_description = `${match.team1_name} won by ${margin} runs`;
+    } else if (team2Score > team1Score) {
+      winner = match.team2;
+      const margin = team2Score - team1Score;
+      result_description = `${match.team2_name} won by ${margin} runs`;
+    }
+
+    // Update match with completion status and winner
+    const updateResult = await pool.query(
+      `UPDATE matches 
+       SET match_status = 'completed', winner = $1, result_description = $2, completed_at = NOW()
+       WHERE id = $3 
+       RETURNING *`,
+      [winner, result_description, id]
+    );
+
+    // Emit socket event for match completion
+    const io = getIO();
+    if (io) {
+      io.to(`match_${id}`).emit("matchComplete", {
+        matchId: String(id),
+        winner,
+        result_description,
+        team1Score,
+        team2Score,
+        team1Wickets,
+        team2Wickets,
+      });
+    }
+
+    res.json({
+      match: updateResult.rows[0],
+      scores: {
+        team1: { runs: team1Score, wickets: team1Wickets },
+        team2: { runs: team2Score, wickets: team2Wickets },
+      },
+      result: result_description,
+    });
+  } catch (err) {
+    console.error("Error completing match:", err);
     res.status(500).send("Server Error");
   }
 });
@@ -244,6 +515,11 @@ router.get("/:id/teams/:teamId/score", async (req, res) => {
 // Add a new ball to a match - Admin only (live scoring)
 router.post("/:matchId/ball", verifyToken, isAdmin, async (req, res) => {
   const { matchId } = req.params;
+  
+  if (!matchId) {
+    return res.status(400).json({ error: "Match ID is required" });
+  }
+  
   const {
     overNumber,
     ballNumber,
@@ -257,6 +533,23 @@ router.post("/:matchId/ball", verifyToken, isAdmin, async (req, res) => {
   } = req.body;
 
   try {
+    // Verify match exists
+    const matchCheck = await pool.query(
+      "SELECT id, match_status FROM matches WHERE id = $1",
+      [matchId]
+    );
+    
+    if (matchCheck.rows.length === 0) {
+      return res.status(404).json({ error: "Match not found" });
+    }
+
+    const match = matchCheck.rows[0];
+
+    // Prevent adding balls to completed matches
+    if (match.match_status === 'completed') {
+      return res.status(400).json({ error: "Match is already completed" });
+    }
+
     // Find or create the over
     let overResult = await pool.query(
       "SELECT id FROM overs WHERE match_id = $1 AND over_number = $2 AND batting_team_id = $3",
@@ -311,33 +604,20 @@ router.post("/:matchId/ball", verifyToken, isAdmin, async (req, res) => {
         liveScore: `Over ${displayOver}.${displayBall}: ${runs || 0} runs${wicket ? " - WICKET!" : ""}`,
         ball: ballResult.rows[0],
       };
-      console.log("Emitting ballUpdate:", payload);
       io.to(`match_${matchId}`).emit("ballUpdate", payload);
+    }
+
+    // Check if match should auto-complete (chasing team wins or all out in inning 2)
+    const completionCheck = await checkAndCompleteMatchIfNeeded(parseInt(matchId));
+    if (completionCheck && completionCheck.completed) {
+      // Match was auto-completed, emit completion event was already done in helper
+      return res.status(200).json(completionCheck);
     }
 
     res.status(201).json(ballResult.rows[0]);
   } catch (err) {
     console.error("Error adding ball:", err);
     res.status(500).send("Server Error");
-  }
-});
-
-// Convenience endpoint to emit a live update for a match (for testing)
-router.post("/:id/emit", async (req, res) => {
-  const { id } = req.params;
-  const { liveScore } = req.body || {
-    liveScore: `Manual update for match ${id}`,
-  };
-  try {
-    const io = getIO();
-    if (!io) return res.status(500).send("Socket.io not initialized");
-    const payload = { matchId: String(id), liveScore };
-    console.log("Manual emit ballUpdate:", payload);
-    io.to(`match_${id}`).emit("ballUpdate", payload);
-    res.status(200).send("Emitted");
-  } catch (err) {
-    console.error("Error emitting manual update:", err);
-    res.status(500).send("Emit failed");
   }
 });
 
@@ -743,5 +1023,8 @@ router.get("/:id/player-stats", async (req, res) => {
     res.status(500).send("Server Error");
   }
 });
+
+
+
 
 export default router;
