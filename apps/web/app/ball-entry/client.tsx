@@ -70,6 +70,7 @@ interface Match {
   match_status?: string;
   winner?: number;
   result_description?: string;
+  format?: string;
 }
 
 interface BallEntryProps {
@@ -99,6 +100,9 @@ export default function BallEntry({
   const [showInningTransition, setShowInningTransition] = useState<boolean>(false);
   const [transitionTimer, setTransitionTimer] = useState<number>(3);
   const [isPolling, setIsPolling] = useState<boolean>(false);
+  const [outBatsmen, setOutBatsmen] = useState<Set<number>>(new Set());
+  const [restingBowler, setRestingBowler] = useState<number | null>(null);
+  const [bowlerOversMap, setBowlerOversMap] = useState<Map<number, number>>(new Map());
   const inningCompletedRef = useRef(false);
   const inning2CompletedRef = useRef(false);
   const prevMatchRef = useRef<number>(0);
@@ -143,14 +147,236 @@ export default function BallEntry({
 
   const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
-  /**
-   * Polling Helper Functions
-   * Fetches updated match data every 3 seconds when inning 1 is complete
-   */
+  const getDraftKey = (matchId?: number) => {
+    const userId = user?.id ?? user?.email ?? "anon";
+    return `ballEntryDraft:${matchId ?? "no-match"}:user:${userId}`;
+  };
 
-  /**
-   * Fetch a single match to get updated status (used for polling)
-   */
+  const saveDraft = (matchId?: number) => {
+    if (!matchId || matchId === 0) return;
+    try {
+      const key = getDraftKey(matchId);
+      const payload = {
+        selectedMatch,
+        battingTeamId,
+        strikerId,
+        nonStrikerId,
+        bowlerId,
+        overNumber,
+        ballNumber,
+        runs,
+        extras: watch("extras"),
+        extraType,
+        wicket,
+        eventText,
+        outBatsmen: Array.from(outBatsmen),
+        restingBowler,
+        bowlerOversMap: Array.from(bowlerOversMap.entries()),
+      };
+      localStorage.setItem(key, JSON.stringify(payload));
+      console.log(`[Draft] auto-saved for match ${matchId}`);
+    } catch (e) {
+      console.warn("[Draft] save failed", e);
+    }
+  };
+
+  const clearDraft = (matchId?: number) => {
+    if (!matchId || matchId === 0) return;
+    try {
+      const key = getDraftKey(matchId);
+      localStorage.removeItem(key);
+      console.log(`[Draft] cleared for match ${matchId}`);
+    } catch (e) {
+      console.warn("[Draft] clear failed", e);
+    }
+  };
+
+  const draftTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const draftRestoreCheckedRef = useRef<Set<number>>(new Set());
+
+  // Restore draft when selectedMatch changes (prompt user with dialog)
+  useEffect(() => {
+    if (!selectedMatch || selectedMatch === 0) return;
+    
+    // Only attempt restore once per match session
+    if (draftRestoreCheckedRef.current.has(selectedMatch)) return;
+    draftRestoreCheckedRef.current.add(selectedMatch);
+
+    try {
+      const key = getDraftKey(selectedMatch);
+      const raw = localStorage.getItem(key);
+      if (!raw) return;
+
+      const parsed = JSON.parse(raw);
+      
+      // Use dynamic import to avoid SSR issues
+      import("@/context/DialogStore").then(({ useDialogStore }) => {
+        const { openDialog } = useDialogStore.getState();
+        openDialog({
+          title: "Restore Saved Draft?",
+          message: "A saved form state was found for this match. Would you like to restore it?",
+          confirmText: "Restore",
+          cancelText: "Start Fresh",
+          onConfirm: () => {
+            // Restore form fields in the correct order with a small delay to ensure state updates propagate
+            if (typeof parsed.battingTeamId === "number") setValue("battingTeamId", parsed.battingTeamId);
+            
+            // Batsmen must be set after batting team is set (or can be set together)
+            if (typeof parsed.strikerId === "number") setValue("strikerId", parsed.strikerId, { shouldDirty: true });
+            if (typeof parsed.nonStrikerId === "number") setValue("nonStrikerId", parsed.nonStrikerId, { shouldDirty: true });
+            
+            // Bowler selection
+            if (typeof parsed.bowlerId === "number") setValue("bowlerId", parsed.bowlerId, { shouldDirty: true });
+            
+            // Over and ball info
+            if (typeof parsed.overNumber === "number") setValue("overNumber", parsed.overNumber);
+            if (typeof parsed.ballNumber === "number") setValue("ballNumber", parsed.ballNumber);
+            
+            // Runs and extras
+            if (typeof parsed.runs === "number") setValue("runs", parsed.runs);
+            if (typeof parsed.extras === "string") setValue("extras", parsed.extras);
+            if (typeof parsed.extraType === "string") setValue("extraType", parsed.extraType);
+            
+            // Wicket and event
+            if (typeof parsed.wicket === "boolean") setValue("wicket", parsed.wicket);
+            if (typeof parsed.eventText === "string") setValue("eventText", parsed.eventText);
+            
+            // Restore out batsmen as a Set
+            if (Array.isArray(parsed.outBatsmen)) {
+              setOutBatsmen(new Set(parsed.outBatsmen));
+              console.log("[Draft] restored out batsmen:", parsed.outBatsmen);
+            }
+            
+            // Restore resting bowler
+            if (typeof parsed.restingBowler === "number" || parsed.restingBowler === null) {
+              setRestingBowler(parsed.restingBowler);
+              console.log("[Draft] restored resting bowler:", parsed.restingBowler);
+            }
+            
+            // Restore bowler overs map
+            if (Array.isArray(parsed.bowlerOversMap)) {
+              setBowlerOversMap(new Map(parsed.bowlerOversMap));
+              console.log("[Draft] restored bowler overs map:", parsed.bowlerOversMap);
+            }
+            
+            console.log("[Draft] fully restored for match", selectedMatch);
+          },
+          onCancel: () => {
+            console.log("[Draft] user chose to start fresh");
+          },
+        });
+      }).catch(e => console.warn("[Draft] dialog import failed", e));
+    } catch (e) {
+      console.warn("[Draft] restore check failed", e);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedMatch]);
+
+  // Autosave draft on form changes (debounced by 1000ms)
+  useEffect(() => {
+    if (!selectedMatch || selectedMatch === 0) return;
+
+    if (draftTimerRef.current) {
+      clearTimeout(draftTimerRef.current);
+    }
+
+    draftTimerRef.current = setTimeout(() => {
+      saveDraft(selectedMatch);
+    }, 1000);
+
+    return () => {
+      if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+    };
+  }, [
+    selectedMatch,
+    battingTeamId,
+    strikerId,
+    nonStrikerId,
+    bowlerId,
+    overNumber,
+    ballNumber,
+    runs,
+    extraType,
+    wicket,
+    eventText,
+    outBatsmen,
+    restingBowler,
+    bowlerOversMap,
+  ]);
+
+  const allowReloadRef = useRef<boolean>(false);
+  const reloadAttemptRef = useRef<boolean>(false);
+
+  // Intercept reload and show custom dialog
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ctrl+R or Cmd+R to reload
+      if ((e.ctrlKey || e.metaKey) && e.key === 'r') {
+        if (selectedMatch && selectedMatch > 0 && !allowReloadRef.current) {
+          e.preventDefault();
+          showReloadDialog();
+        }
+      }
+      // F5 to reload
+      if (e.key === 'F5') {
+        if (selectedMatch && selectedMatch > 0 && !allowReloadRef.current) {
+          e.preventDefault();
+          showReloadDialog();
+        }
+      }
+    };
+
+    const showReloadDialog = () => {
+      import("@/context/DialogStore").then(({ useDialogStore }) => {
+        const { openDialog } = useDialogStore.getState();
+        openDialog({
+          title: "Unsaved Changes",
+          message: "You have unsaved form data for this match. Your data will be auto-saved and restored when you return. Are you sure you want to reload?",
+          confirmText: "Reload Page",
+          cancelText: "Stay",
+          isDangerous: true,
+          onConfirm: () => {
+            allowReloadRef.current = true;
+            window.location.reload();
+          },
+          onCancel: () => {
+            console.log("[Draft] user chose to stay on page");
+          },
+        });
+      }).catch(e => console.warn("[Draft] dialog import failed", e));
+    };
+
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      // If user confirmed reload, allow it
+      if (allowReloadRef.current) {
+        return;
+      }
+
+      if (selectedMatch && selectedMatch > 0) {
+        // For browser reload button and other reload methods, prevent default
+        e.preventDefault();
+        e.returnValue = "";
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+    };
+  }, [selectedMatch]);
+  // --- end draft persistence ---
+
+  const getMaxOversForFormat = (format: string | undefined): number => {
+    if (!format) return 4; 
+    const formatlower = format.toLowerCase();
+    if (formatlower === "odi") return 10;
+    // if (formatlower === "test") return 10; 
+    return 4; 
+  };
+
   const fetchSingleMatch = async (matchId: number): Promise<Match | null> => {
     try {
       const response = await fetch(`${apiBase}/api/matches/${matchId}`);
@@ -187,10 +413,6 @@ export default function BallEntry({
     }
   };
 
-  /**
-   * Start polling: automatically fetch updated match data every 3 seconds
-   * This activates after inning 1 is complete to track real-time changes for inning 2
-   */
   const startPolling = () => {
     if (pollingIntervalRef.current) {
       console.warn("Polling already started");
@@ -217,13 +439,9 @@ export default function BallEntry({
 
         console.log("✅ Match data updated via polling");
       }
-    }, 3000); // Poll every 3 seconds
+    }, 3000); 
   };
 
-  /**
-   * Stop polling: clear the interval to prevent unnecessary requests
-   * Call this when user navigates away or inning 2 completes
-   */
   const stopPolling = () => {
     if (pollingIntervalRef.current) {
       clearInterval(pollingIntervalRef.current);
@@ -346,11 +564,6 @@ export default function BallEntry({
     }
   }, [selectedMatch, setValue]);
 
-  /**
-   * Monitor inning1_complete and manage polling lifecycle
-   * When inning 1 is complete, start polling for real-time inning 2 updates
-   * This enables automatic data refresh every 3 seconds
-   */
   useEffect(() => {
     if (!selectedMatchDetails) {
       stopPolling();
@@ -358,21 +571,15 @@ export default function BallEntry({
     }
 
     if (selectedMatchDetails.inning1_complete) {
-      // Inning 1 is complete - start polling for inning 2 updates
       if (!isPolling && !pollingIntervalRef.current) {
         startPolling();
       }
     } else {
-      // Inning 1 is not complete - stop polling if active
       if (isPolling) {
         stopPolling();
       }
     }
-
-    // Cleanup: stop polling when component unmounts or match selection changes
     return () => {
-      // Don't stop polling on dependency change, only on unmount
-      // This is handled by the condition above
     };
   }, [selectedMatchDetails?.inning1_complete, selectedMatchDetails?.id, isPolling]);
 
@@ -385,14 +592,14 @@ export default function BallEntry({
 
   if (authLoading) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-black via-slate-900 to-black">
+      <div className="flex items-center justify-center min-h-screen bg-linear-to-br from-black via-slate-900 to-black">
         <div className="text-center max-w-sm">
           {/* Animated cricket ball icon */}
           <div className="mb-8 flex justify-center">
             <div className="relative w-24 h-24">
-              <div className="absolute inset-0 bg-gradient-to-r from-lime-500 to-lime-600 rounded-full animate-spin" 
+              <div className="absolute inset-0 bg-linear-to-r from-lime-500 to-lime-600 rounded-full animate-spin" 
                    style={{ animationDuration: '3s' }}></div>
-              <div className="absolute inset-1 bg-gradient-to-br from-black via-slate-900 to-black rounded-full flex items-center justify-center">
+              <div className="absolute inset-1 bg-linear-to-br from-black via-slate-900 to-black rounded-full flex items-center justify-center">
                 <svg className="w-10 h-10 text-lime-400" fill="currentColor" viewBox="0 0 24 24">
                   <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8z"/>
                 </svg>
@@ -402,7 +609,7 @@ export default function BallEntry({
           
           {/* Loading text with animation */}
           <div className="space-y-3">
-            <h3 className="text-xl font-bold bg-gradient-to-r from-lime-400 to-lime-500 bg-clip-text text-transparent">
+            <h3 className="text-xl font-bold bg-linear-to-r from-lime-400 to-lime-500 bg-clip-text text-transparent">
               Loading Match Data
             </h3>
             <p className="text-gray-400 text-sm">
@@ -498,6 +705,7 @@ export default function BallEntry({
         }, 1000);
 
         setMessage("✅ Inning 1 completed! Preparing Inning 2...");
+        clearDraft(selectedMatch);
       } else {
         setMessage("❌ Failed to complete inning");
       }
@@ -551,6 +759,8 @@ export default function BallEntry({
 
         // Stop polling
         stopPolling();
+        // Clear draft after match completion
+        clearDraft(selectedMatch);
       } else {
         setMessage("❌ Failed to complete match");
       }
@@ -608,13 +818,132 @@ export default function BallEntry({
       });
 
       if (response.ok) {
+        const result = await response.json();
+        
+        // Handle inning end all-out
+        if (result.inningEnded) {
+          console.log("[UI] Inning ended:", result);
+          
+          // Update match details
+          if (result.match) {
+            const normalizedMatch: Match = {
+              ...result.match,
+              id: Number(result.match.id),
+              team1_id: Number(result.match.team1_id),
+              team2_id: Number(result.match.team2_id),
+              team1_name: result.match.team1_name,
+              team2_name: result.match.team2_name,
+              overs_per_inning: Number(result.match.overs_per_inning),
+              current_inning: Number(result.match.current_inning),
+              inning1_complete: Boolean(result.match.inning1_complete),
+              match_status: result.match.match_status,
+            };
+            setSelectedMatchDetails(normalizedMatch);
+          }
+          
+          // Show inning transition
+          setShowInningTransition(true);
+          setTransitionTimer(5);
+          
+          const countdown = setInterval(() => {
+            setTransitionTimer((prev) => {
+              if (prev <= 1) {
+                clearInterval(countdown);
+                setShowInningTransition(false);
+                return 0;
+              }
+              return prev - 1;
+            });
+          }, 1000);
+          
+          setMessage("✅ Inning 1 completed! Team all out. Preparing Inning 2...");
+          
+          // Reset form for next inning
+          setValue("ballNumber", 0);
+          setValue("overNumber", 0);
+          setValue("runs", 0);
+          setValue("extras", "0");
+          setValue("wicket", false);
+          setValue("eventText", "");
+          setValue("extraType", "none");
+          
+          // Reset out batsmen and resting bowler for the new inning
+          setOutBatsmen(new Set());
+          setRestingBowler(null);
+          setBowlerOversMap(new Map());
+          // Clear draft after inning completes
+          clearDraft(selectedMatch);
+          return;
+        }
+        
+        // Handle match completion (all-out in inning 2)
+        if (result.completed && result.match?.match_status === 'completed') {
+          console.log("[UI] Match completed:", result);
+          
+          if (result.match) {
+            const normalizedMatch: Match = {
+              ...result.match,
+              id: Number(result.match.id),
+              team1_id: Number(result.match.team1_id),
+              team2_id: Number(result.match.team2_id),
+              team1_name: result.match.team1_name,
+              team2_name: result.match.team2_name,
+              overs_per_inning: Number(result.match.overs_per_inning),
+              current_inning: Number(result.match.current_inning),
+              inning1_complete: Boolean(result.match.inning1_complete),
+              match_status: result.match.match_status,
+            };
+            setSelectedMatchDetails(normalizedMatch);
+          }
+          
+          // Update form to show the final ball that was just submitted
+          const illegal = /^(wide|wd|no-?ball|nb)$/i.test(data.extraType);
+          if (!illegal) {
+            if (ballToSend === 6) {
+              setValue("overNumber", data.overNumber + 1);
+              setValue("ballNumber", 0);
+            } else {
+              setValue("ballNumber", ballToSend);
+            }
+          }
+          
+          setMessage(`✅ Match Completed! ${result.result}`);
+          // Clear draft after match completes
+          clearDraft(selectedMatch);
+          return;
+        }
+        
+        // Normal ball submission
         setMessage("✅ Ball added successfully!");
+        
+        // Track out batsmen when wicket is submitted
+        if (data.wicket && data.strikerId > 0) {
+          setOutBatsmen(prev => new Set([...prev, data.strikerId]));
+          console.log(`[UI] Batsman ${data.strikerId} marked as out`);
+        }
+        
         const illegal = /^(wide|wd|no-?ball|nb)$/i.test(data.extraType);
         const ballToSend2 = data.ballNumber + 1;
         const isOddRun = data.runs === 1 || data.runs === 3 || data.runs === 5;
 
         if (!illegal) {
           if (ballToSend2 === 6) {
+            // Over complete - mark bowler as resting for next over and increment overs bowled
+            setRestingBowler(data.bowlerId);
+            
+            // Track overs bowled by this bowler
+            setBowlerOversMap(prev => {
+              const newMap = new Map(prev);
+              const currentOvers = newMap.get(data.bowlerId) || 0;
+              newMap.set(data.bowlerId, currentOvers + 1);
+              const maxOvers = getMaxOversForFormat(selectedMatchDetails?.format || "t20");
+              console.log(`[UI] Bowler ${data.bowlerId} completed over. Total overs: ${currentOvers + 1}/${maxOvers}`);
+              if (currentOvers + 1 >= maxOvers) {
+                console.log(`[UI] Bowler ${data.bowlerId} has reached max overs limit (${currentOvers + 1}/${maxOvers}) - PERMANENTLY DISABLED`);
+              }
+              return newMap;
+            });
+            
             if (data.runs !== 1) {
               const tmp = data.strikerId;
               setValue("strikerId", data.nonStrikerId);
@@ -622,6 +951,7 @@ export default function BallEntry({
             }
             setValue("overNumber", data.overNumber + 1);
             setValue("ballNumber", 0);
+            setValue("bowlerId", 0);
           } else {
             if (isOddRun) {
               const tmp = data.strikerId;
@@ -629,6 +959,12 @@ export default function BallEntry({
               setValue("nonStrikerId", tmp);
             }
             setValue("ballNumber", data.ballNumber + 1);
+            
+            // If we're not at the start of an over, clear resting bowler if next ball is 1st of new over
+            if (data.ballNumber + 1 === 1) {
+              setRestingBowler(null);
+              console.log(`[UI] Resting period over - bowler is available again`);
+            }
           }
         }
 
@@ -637,6 +973,15 @@ export default function BallEntry({
         setValue("wicket", false);
         setValue("eventText", "");
         setValue("extraType", "none");
+        
+        // Clear striker ID if wicket was marked - requires fresh batsman selection
+        if (data.wicket) {
+          setValue("strikerId", 0);
+          console.log("[UI] Wicket marked - striker ID cleared");
+        }
+        
+        // Clear draft after successful ball submission
+        clearDraft(selectedMatch);
       } else {
         setMessage("❌ Failed to add ball");
       }
@@ -786,6 +1131,7 @@ export default function BallEntry({
                   >
                     <select
                       {...register("selectedMatch", { valueAsNumber: true })}
+                      value={selectedMatch}
                       className={`w-full p-3 border-2 rounded-lg focus:ring-2 focus:ring-lime-500 focus:border-lime-500 transition-all bg-slate-800 text-white ${
                         errors.selectedMatch
                           ? "border-red-500"
@@ -815,6 +1161,7 @@ export default function BallEntry({
                     <div className="space-y-2">
                       <select
                         {...register("battingTeamId", { valueAsNumber: true })}
+                        value={battingTeamId}
                         key={`${selectedMatch}-${selectedMatchDetails?.inning1_complete}`}
                         className={`w-full p-3 border-2 rounded-lg focus:ring-2 focus:ring-lime-500 focus:border-lime-500 transition-all bg-slate-800 text-white ${
                           errors.battingTeamId
@@ -848,6 +1195,30 @@ export default function BallEntry({
                   </FormField>
                 </div>
 
+                {/* Placeholder when match/team not selected */}
+                {(selectedMatch === 0 || battingTeamId === 0) && (
+                  <div className="flex flex-col items-center justify-center py-12 text-center">
+                    <div className="w-16 h-16 bg-linear-to-br from-lime-500/20 to-lime-600/20 rounded-full flex items-center justify-center mb-4">
+                      <svg className="w-8 h-8 text-lime-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                      </svg>
+                    </div>
+                    <h3 className="text-lg font-semibold text-gray-300 mb-2">
+                      {selectedMatch === 0 ? "Select a Match to Begin" : "Select a Batting Team to Begin"}
+                    </h3>
+                    <p className="text-gray-400 text-sm max-w-sm">
+                      {selectedMatch === 0 
+                        ? "Choose a match from the dropdown above to start ball-by-ball entry."
+                        : "Select which team is batting to unlock the full scoring form."}
+                    </p>
+                  </div>
+                )}
+
+                {/* Rest of form - only visible when match and batting team are selected */}
+                {selectedMatch > 0 && battingTeamId > 0 && (
+                  <>
+                  
+
 
                 {/* Over Information */}
                 <div className="bg-linear-to-r from-lime-500/20 to-lime-600/20 rounded-lg p-4 border border-lime-500">
@@ -857,36 +1228,28 @@ export default function BallEntry({
                   <div className="grid grid-cols-2 gap-4">
                     <FormField
                       label="Over Number (0-based)"
-                      error={errors.overNumber?.message}
-                      helperText="0 = 1st over"
+                      helperText="0 = 1st over (Auto-updates)"
                     >
+                      <div className="w-full p-3 border-2 border-lime-500/50 rounded-lg bg-slate-900 text-lime-300 font-mono font-bold">
+                        {overNumber}
+                      </div>
                       <input
                         type="number"
                         {...register("overNumber", { valueAsNumber: true })}
-                        min={0}
-                        max={50}
-                        className={`w-full p-3 border-2 rounded-lg focus:ring-2 focus:ring-lime-500 focus:border-lime-500 bg-slate-800 text-white ${
-                          errors.overNumber
-                            ? "border-red-500"
-                            : "border-lime-500/30"
-                        }`}
+                        hidden
                       />
                     </FormField>
                     <FormField
                       label="Ball Number (0-5)"
-                      error={errors.ballNumber?.message}
-                      helperText="0 = 1st ball"
+                      helperText="0 = 1st ball (Auto-updates)"
                     >
+                      <div className="w-full p-3 border-2 border-lime-500/50 rounded-lg bg-slate-900 text-lime-300 font-mono font-bold">
+                        {ballNumber}
+                      </div>
                       <input
                         type="number"
                         {...register("ballNumber", { valueAsNumber: true })}
-                        min={0}
-                        max={5}
-                        className={`w-full p-3 border-2 rounded-lg focus:ring-2 focus:ring-lime-500 bg-slate-800 text-white ${
-                          errors.ballNumber
-                            ? "border-red-500"
-                            : "border-slate-700"
-                        }`}
+                        hidden
                       />
                     </FormField>
                   </div>
@@ -932,13 +1295,14 @@ export default function BallEntry({
                     </div>
                     <select
                       {...register("strikerId", { valueAsNumber: true })}
+                      value={strikerId}
                       className={`w-full p-3 border rounded-lg focus:ring-2 focus:ring-cyan-500 bg-slate-800 text-white ${
                         errors.strikerId ? "border-red-500" : "border-cyan-500"
                       }`}
                     >
                       <option value={0}>Select Striker</option>
                       {playersInMatch
-                        .filter((p) => p.team_id === battingTeamId)
+                        .filter((p) => p.team_id === battingTeamId && !outBatsmen.has(p.id))
                         .map((player) => (
                           <option
                             key={player.id}
@@ -963,11 +1327,12 @@ export default function BallEntry({
                     </label>
                     <select
                       {...register("nonStrikerId", { valueAsNumber: true })}
+                      value={nonStrikerId}
                       className="w-full p-3 border border-amber-500 rounded-lg focus:ring-2 focus:ring-amber-500 bg-slate-800 text-white"
                     >
                       <option value={0}>Select Non-Striker</option>
                       {playersInMatch
-                        .filter((p) => p.team_id === battingTeamId)
+                        .filter((p) => p.team_id === battingTeamId && !outBatsmen.has(p.id))
                         .map((player) => (
                           <option
                             key={player.id}
@@ -989,18 +1354,36 @@ export default function BallEntry({
                 >
                   <select
                     {...register("bowlerId", { valueAsNumber: true })}
+                    value={bowlerId}
                     className={`w-full p-3 border-2 rounded-lg focus:ring-2 focus:ring-lime-500 bg-slate-800 text-white ${
                       errors.bowlerId ? "border-red-500" : "border-slate-700"
                     }`}
                   >
                     <option value={0}>Select Bowler</option>
                     {playersInMatch
-                      .filter((p) => p.team_id !== battingTeamId)
-                      .map((player) => (
-                        <option key={player.id} value={player.id}>
-                          {player.name}
-                        </option>
-                      ))}
+                      .filter((p) => {
+                        // Exclude bowlers from opposite team (non-bowling team)
+                        if (p.team_id === battingTeamId) return false;
+                        
+                        // Exclude resting bowler
+                        if (p.id === restingBowler) return false;
+                        
+                        // Exclude bowlers who have completed max overs
+                        const bowlerOvers = bowlerOversMap.get(p.id) || 0;
+                        const maxOvers = getMaxOversForFormat(selectedMatchDetails?.format || "t20");
+                        if (bowlerOvers >= maxOvers) return false;
+                        
+                        return true;
+                      })
+                      .map((player) => {
+                        const bowlerOvers = bowlerOversMap.get(player.id) || 0;
+                        const maxOvers = getMaxOversForFormat(selectedMatchDetails?.format || "t20");
+                        return (
+                          <option key={player.id} value={player.id}>
+                            {player.name} ({bowlerOvers}/{maxOvers} overs)
+                          </option>
+                        );
+                      })}
                   </select>
                 </FormField>
 
@@ -1020,14 +1403,17 @@ export default function BallEntry({
                             key={run}
                             type="button"
                             onClick={() => setValue("runs", run)}
+                            disabled={wicket}
                             className={`p-3 rounded-lg font-bold transition-all ${
-                              runs === run
-                                ? run === 6
-                                  ? "bg-linear-to-r from-rose-500 to-pink-500 text-white shadow-lg scale-105"
-                                  : run === 4
-                                    ? "bg-linear-to-r from-orange-500 to-amber-500 text-black shadow-lg scale-105"
-                                    : "bg-lime-500 text-black shadow-lg scale-105"
-                                : "bg-slate-700 border-2 border-slate-600 text-gray-300 hover:border-lime-500"
+                              wicket
+                                ? "bg-slate-900 border-2 border-slate-700 text-slate-500 cursor-not-allowed opacity-50"
+                                : runs === run
+                                  ? run === 6
+                                    ? "bg-linear-to-r from-rose-500 to-pink-500 text-white shadow-lg scale-105"
+                                    : run === 4
+                                      ? "bg-linear-to-r from-orange-500 to-amber-500 text-black shadow-lg scale-105"
+                                      : "bg-lime-500 text-black shadow-lg scale-105"
+                                  : "bg-slate-700 border-2 border-slate-600 text-gray-300 hover:border-lime-500"
                             }`}
                           >
                             {run}
@@ -1098,7 +1484,7 @@ export default function BallEntry({
                 {/* Submit Button */}
                 <button
                   type="submit"
-                  disabled={isSubmitting || selectedMatchDetails?.match_status === 'completed'}
+                  disabled={isSubmitting || selectedMatchDetails?.match_status === 'completed' || bowlerId === 0 || strikerId === 0 || nonStrikerId === 0}
                   className="w-full bg-linear-to-r from-lime-500 to-lime-600 hover:from-lime-600 hover:to-lime-700 text-black py-4 px-6 rounded-lg font-bold text-lg shadow-lg hover:shadow-xl disabled:from-gray-500 disabled:to-gray-600 disabled:cursor-not-allowed transition-all duration-200"
                 >
                   {isSubmitting ? (
@@ -1116,6 +1502,57 @@ export default function BallEntry({
                         <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                       </svg>
                       <span>Match Completed</span>
+                    </span>
+                  ) : bowlerId === 0 ? (
+                    <span className="flex items-center justify-center space-x-2">
+                      <svg
+                        className="w-5 h-5"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M12 4v16m8-8H4"
+                        />
+                      </svg>
+                      <span>Select Bowler First</span>
+                    </span>
+                  ) : strikerId === 0 ? (
+                    <span className="flex items-center justify-center space-x-2">
+                      <svg
+                        className="w-5 h-5"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M12 4v16m8-8H4"
+                        />
+                      </svg>
+                      <span>Select Striker First</span>
+                    </span>
+                  ) : nonStrikerId === 0 ? (
+                    <span className="flex items-center justify-center space-x-2">
+                      <svg
+                        className="w-5 h-5"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M12 4v16m8-8H4"
+                        />
+                      </svg>
+                      <span>Select Non-Striker First</span>
                     </span>
                   ) : (
                     <span className="flex items-center justify-center space-x-2">
@@ -1162,6 +1599,8 @@ export default function BallEntry({
                     <span>Complete Match</span>
                   </button>
                 )} */}
+                  </>
+                )}
               </form>
             </div>
 

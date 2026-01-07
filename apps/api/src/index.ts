@@ -9,6 +9,7 @@ import simulationRouter from './routes/simulation.ts';
 import cors from 'cors';
 import descriptionsRouter from './routes/playerDescriptions.ts';
 import stadiumsRouter from './routes/stadiums.ts';
+import playerStatsRouter from './routes/playerStats.ts';
 
 const app = express();
 const server = http.createServer(app);
@@ -27,6 +28,8 @@ app.use('/api/players', playersRouter);
 app.use('/api/stadiums', stadiumsRouter);
 app.use('/api/simulation', simulationRouter);
 app.use('/api', descriptionsRouter);
+app.use('/api/players', playerStatsRouter);
+app.use('/api/teams', playerStatsRouter);
 
 app.get('/', (req, res) => {
     res.send('Hello from the API!');

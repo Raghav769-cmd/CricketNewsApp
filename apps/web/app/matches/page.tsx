@@ -235,6 +235,12 @@ export default function Matches() {
     }
   };
 
+  const getTeamScore = (matchId: number, teamId: number) => {
+    const ms = matchScores[matchId];
+    if (!ms || !ms.scores) return undefined;
+    return ms.scores.find((s) => Number(s.teamId) === Number(teamId));
+  };
+
   const handleAddMatch = async (formData: {
     team1: string;
     team2: string;
@@ -580,14 +586,14 @@ export default function Matches() {
                           {match.team1_name || match.team1}
                         </h3>
                       </div>
-                      {matchScores[match.id]?.scores?.[0] && (
+                      {getTeamScore(match.id, match.team1) && (
                         <div className="text-right shrink-0">
                           <div className="text-2xl sm:text-3xl font-bold text-white">
-                            {matchScores[match.id]?.scores?.[0]?.runs}/
-                            {matchScores[match.id]?.scores?.[0]?.wickets}
+                            {getTeamScore(match.id, match.team1)?.runs}/
+                            {getTeamScore(match.id, match.team1)?.wickets}
                           </div>
                           <div className="text-xs sm:text-sm text-gray-400">
-                            ({matchScores[match.id]?.scores?.[0]?.overs} ov)
+                            ({getTeamScore(match.id, match.team1)?.overs} ov)
                           </div>
                         </div>
                       )}
@@ -614,14 +620,14 @@ export default function Matches() {
                           {match.team2_name || match.team2}
                         </h3>
                       </div>
-                      {matchScores[match.id]?.scores?.[1] && (
+                      {getTeamScore(match.id, match.team2) && (
                         <div className="text-right shrink-0">
                           <div className="text-2xl sm:text-3xl font-bold text-white">
-                            {matchScores[match.id]?.scores?.[1]?.runs}/
-                            {matchScores[match.id]?.scores?.[1]?.wickets}
+                            {getTeamScore(match.id, match.team2)?.runs}/
+                            {getTeamScore(match.id, match.team2)?.wickets}
                           </div>
                           <div className="text-xs sm:text-sm text-gray-400">
-                            ({matchScores[match.id]?.scores?.[1]?.overs} ov)
+                            ({getTeamScore(match.id, match.team2)?.overs} ov)
                           </div>
                         </div>
                       )}

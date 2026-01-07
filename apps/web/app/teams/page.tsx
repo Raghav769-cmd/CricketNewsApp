@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 
 interface Team {
   id: number;
@@ -75,6 +76,7 @@ const teamColors: ColorScheme[] = [
 ];
 
 export default function Teams() {
+  const router = useRouter();
   const [teams, setTeams] = useState<Team[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
 
@@ -198,6 +200,7 @@ export default function Teams() {
                     </div>
 
                     <button
+                      onClick={() => router.push(`/teams/${team.id}`)}
                       className={`
                         w-full
                         ${colorScheme.bg} ${colorScheme.text}
