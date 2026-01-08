@@ -3,10 +3,6 @@ import pool from "../db/connection.js";
 
 const router: Router = Router();
 
-/**
- * GET /api/players/:playerId/stats
- * Fetch stats for a player across all formats
- */
 router.get("/:playerId/stats", async (req, res) => {
   try {
     const { playerId } = req.params;
@@ -46,10 +42,6 @@ router.get("/:playerId/stats", async (req, res) => {
   }
 });
 
-/**
- * GET /api/players/:playerId/stats/:format
- * Fetch stats for a specific player and format
- */
 router.get("/:playerId/stats/:format", async (req, res) => {
   try {
     const { playerId, format } = req.params;
@@ -115,10 +107,6 @@ router.get("/:playerId/stats/:format", async (req, res) => {
   }
 });
 
-/**
- * GET /api/teams/:teamId/players
- * Fetch all players in a team with basic info
- */
 router.get("/:teamId/players", async (req, res) => {
   try {
     const { teamId } = req.params;
@@ -143,10 +131,6 @@ router.get("/:teamId/players", async (req, res) => {
   }
 });
 
-/**
- * GET /api/teams/:teamId/players-with-stats/:format
- * Fetch all players in a team with their stats for specific format
- */
 router.get("/:teamId/players-with-stats/:format", async (req, res) => {
   try {
     const { teamId, format } = req.params;

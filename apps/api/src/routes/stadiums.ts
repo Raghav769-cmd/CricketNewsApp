@@ -3,10 +3,6 @@ import pool from "../db/connection.js";
 
 const router: Router = Router();
 
-/**
- * GET /api/stadiums
- * Fetch all stadiums
- */
 router.get("/", async (req, res) => {
   try {
     const result = await pool.query(
@@ -20,10 +16,6 @@ router.get("/", async (req, res) => {
   }
 });
 
-/**
- * GET /api/stadiums/:id
- * Fetch a single stadium by ID
- */
 router.get("/:id", async (req, res) => {
   try {
     const { id } = req.params;

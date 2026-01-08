@@ -5,15 +5,10 @@ import { generateToken, verifyToken, isSuperadmin } from '../middleware/auth.ts'
 
 const router: Router = Router();
 
-/**
- * Register a new user
- * POST /api/auth/register
- */
 router.post('/register', async (req: Request, res: Response) => {
   const { email, password, role = 'user', name, username } = req.body;
 
   try {
-    // Validation
     if (!email || !password || !username) {
       return res.status(400).json({ error: 'Email, password, and username are required' });
     }
@@ -30,10 +25,8 @@ router.post('/register', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Username must be at least 3 characters long' });
     }
 
-    // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Check if username already exists in either admins or regular_users table
     const usernameExists = await pool.query(
       'SELECT username FROM admins WHERE username = $1 UNION SELECT username FROM regular_users WHERE username = $1',
       [username]
@@ -43,9 +36,7 @@ router.post('/register', async (req: Request, res: Response) => {
       return res.status(409).json({ error: 'Username is already taken. Please choose a different username.' });
     }
 
-    // If registering as superadmin or admin, create a request for approval
     if (role === 'superadmin' || role === 'admin') {
-      // Check if request already exists
       const existingRequest = await pool.query(
         'SELECT * FROM admin_requests WHERE email = $1 OR username = $2',
         [email, username]
@@ -55,7 +46,6 @@ router.post('/register', async (req: Request, res: Response) => {
         return res.status(409).json({ error: 'Admin request already exists for this email or username' });
       }
 
-      // Create admin request
       const result = await pool.query(
         'INSERT INTO admin_requests (email, password, name, username, status, requested_by_email, role) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, email, username, name, status, created_at, role',
         [email, hashedPassword, name || null, username, 'pending', email, role]
@@ -77,8 +67,6 @@ router.post('/register', async (req: Request, res: Response) => {
       });
     }
 
-    // For regular users, proceed normally
-    // Check if user already exists
     const existingUser = await pool.query(
       'SELECT * FROM regular_users WHERE email = $1 OR username = $2',
       [email, username]
@@ -88,7 +76,6 @@ router.post('/register', async (req: Request, res: Response) => {
       return res.status(409).json({ error: 'User with this email or username already exists' });
     }
 
-    // Create user
     const result = await pool.query(
       'INSERT INTO regular_users (email, password, name, username) VALUES ($1, $2, $3, $4) RETURNING id, email, username, name',
       [email, hashedPassword, name || null, username]
@@ -114,15 +101,10 @@ router.post('/register', async (req: Request, res: Response) => {
   }
 });
 
-/**
- * Login user
- * POST /api/auth/login
- */
 router.post('/login', async (req: Request, res: Response) => {
   const { email, password } = req.body;
 
   try {
-    // Validation
     if (!email || !password) {
       return res.status(400).json({ error: 'Email and password are required' });
     }
@@ -130,7 +112,6 @@ router.post('/login', async (req: Request, res: Response) => {
     let user = null;
     let role: 'superadmin' | 'admin' | 'user' = 'user';
 
-    // Try to find user in admins table first
     const adminResult = await pool.query(
       'SELECT id, email, password, name, username, role FROM admins WHERE email = $1',
       [email]
@@ -138,9 +119,8 @@ router.post('/login', async (req: Request, res: Response) => {
 
     if (adminResult.rows.length > 0) {
       user = adminResult.rows[0];
-      role = user.role as 'superadmin' | 'admin' | 'user'; // Use role from database
+      role = user.role as 'superadmin' | 'admin' | 'user'; 
     } else {
-      // Try to find user in regular_users table
       const userResult = await pool.query(
         'SELECT id, email, password, name, username FROM regular_users WHERE email = $1',
         [email]
@@ -156,14 +136,12 @@ router.post('/login', async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Invalid email or password' });
     }
 
-    // Check password
     const passwordMatch = await bcrypt.compare(password, user.password);
 
     if (!passwordMatch) {
       return res.status(401).json({ error: 'Invalid email or password' });
     }
 
-    // Generate token
     const token = generateToken(user.id, user.email, role);
 
     res.json({
@@ -183,10 +161,6 @@ router.post('/login', async (req: Request, res: Response) => {
   }
 });
 
-/**
- * Get current user info
- * GET /api/auth/me
- */
 router.get('/me', verifyToken, async (req: Request, res: Response) => {
   try {
     const user = req.user;
@@ -195,7 +169,6 @@ router.get('/me', verifyToken, async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Unauthorized' });
     }
     
-    // Fetch additional info from database to include username
     let dbUser = null;
     if (user.role === 'admin' || user.role === 'superadmin') {
       const adminResult = await pool.query(
@@ -226,22 +199,12 @@ router.get('/me', verifyToken, async (req: Request, res: Response) => {
   }
 });
 
-/**
- * Logout user (client-side token removal recommended)
- * POST /api/auth/logout
- */
 router.post('/logout', verifyToken, (req: Request, res: Response) => {
-  // JWT is stateless, so logout is handled client-side by removing the token
   res.json({ message: 'Logout successful' });
 });
 
-/**
- * Get pending admin requests (superadmin only)
- * GET /api/auth/admin-requests/pending
- */
 router.get('/admin-requests/pending', verifyToken, async (req: Request, res: Response) => {
   try {
-    // Check if user is superadmin
     if (req.user?.role !== 'superadmin') {
       return res.status(403).json({ error: 'Only superadmins can view pending requests' });
     }
@@ -260,20 +223,14 @@ router.get('/admin-requests/pending', verifyToken, async (req: Request, res: Res
   }
 });
 
-/**
- * Approve admin request (superadmin only)
- * POST /api/auth/admin-requests/:id/approve
- */
 router.post('/admin-requests/:id/approve', verifyToken, isSuperadmin, async (req: Request, res: Response) => {
   try {
-    // Check if user is superadmin
     if (req.user?.role !== 'superadmin') {
       return res.status(403).json({ error: 'Only superadmins can approve requests' });
     }
 
     const requestId = req.params.id;
 
-    // Get the request
     const requestResult = await pool.query(
       'SELECT * FROM admin_requests WHERE id = $1 AND status = $2',
       [requestId, 'pending']
@@ -285,7 +242,6 @@ router.post('/admin-requests/:id/approve', verifyToken, isSuperadmin, async (req
 
     const adminRequest = requestResult.rows[0];
 
-    // Check if email or username already exists in admins table
     const existingAdmin = await pool.query(
       'SELECT * FROM admins WHERE email = $1 OR username = $2',
       [adminRequest.email, adminRequest.username]
@@ -295,7 +251,6 @@ router.post('/admin-requests/:id/approve', verifyToken, isSuperadmin, async (req
       return res.status(409).json({ error: 'Email or username already exists' });
     }
 
-    // Create admin account with specified role (superadmin or admin)
     const adminResult = await pool.query(
       'INSERT INTO admins (email, password, name, username, role) VALUES ($1, $2, $3, $4, $5) RETURNING id, email, name, username, role',
       [adminRequest.email, adminRequest.password, adminRequest.name, adminRequest.username, adminRequest.role || 'admin']
@@ -303,7 +258,6 @@ router.post('/admin-requests/:id/approve', verifyToken, isSuperadmin, async (req
 
     const newAdmin = adminResult.rows[0];
 
-    // Update the request status
     await pool.query(
       'UPDATE admin_requests SET status = $1, approved_by_admin_id = $2, approved_at = CURRENT_TIMESTAMP WHERE id = $3',
       ['approved', req.user?.id, requestId]
@@ -325,13 +279,8 @@ router.post('/admin-requests/:id/approve', verifyToken, isSuperadmin, async (req
   }
 });
 
-/**
- * Reject admin request (superadmin only)
- * POST /api/auth/admin-requests/:id/reject
- */
 router.post('/admin-requests/:id/reject', verifyToken, async (req: Request, res: Response) => {
   try {
-    // Check if user is superadmin
     if (req.user?.role !== 'superadmin') {
       return res.status(403).json({ error: 'Only superadmins can reject requests' });
     }
@@ -339,7 +288,6 @@ router.post('/admin-requests/:id/reject', verifyToken, async (req: Request, res:
     const requestId = req.params.id;
     const { reason } = req.body;
 
-    // Get the request
     const requestResult = await pool.query(
       'SELECT * FROM admin_requests WHERE id = $1 AND status = $2',
       [requestId, 'pending']
@@ -349,7 +297,6 @@ router.post('/admin-requests/:id/reject', verifyToken, async (req: Request, res:
       return res.status(404).json({ error: 'Request not found or already processed' });
     }
 
-    // Update the request status
     await pool.query(
       'UPDATE admin_requests SET status = $1, approved_by_admin_id = $2, rejection_reason = $3, approved_at = CURRENT_TIMESTAMP WHERE id = $4',
       ['rejected', req.user?.id, reason || null, requestId]

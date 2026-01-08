@@ -260,15 +260,20 @@ export default function MatchDetailPage() {
                 )}
               </div>
 
-                {/* Live Score Display */}
-                {score && score.scores && score.scores.length > 0 && (
+                {/* Live Score Display - Shows innings separately for test format */}
+                {score && score.innings && score.innings.length > 0 && (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 mt-4 sm:mt-6">
-                    {score.scores.map((s: TeamScore, idx: number) => (
-                      <div key={s.teamId} className="bg-slate-900 bg-opacity-20 backdrop-blur-sm rounded-lg p-3 sm:p-4">
-                        <div className="text-white text-xs sm:text-sm font-medium mb-1">{getTeamName(s.teamId)}</div>
+                    {score.innings.map((inning: any) => (
+                      <div key={`${inning.teamId}-${inning.inningNumber}`} className="bg-slate-900 bg-opacity-20 backdrop-blur-sm rounded-lg p-3 sm:p-4">
+                        <div className="flex items-center justify-between mb-1">
+                          <div className="text-white text-xs sm:text-sm font-medium">{getTeamName(inning.teamId)}</div>
+                          <div className="text-lime-400 text-xs font-semibold px-2 py-0.5 bg-lime-500/10 rounded">
+                            Inning {inning.inningNumber}
+                          </div>
+                        </div>
                         <div className="flex justify-between items-end">
-                          <div className="text-3xl sm:text-4xl text-slate-200 font-bold">{s.runs}/{s.wickets}</div>
-                          <div className="text-xs sm:text-sm text-slate-500">({s.overs} ov)</div>
+                          <div className="text-3xl sm:text-4xl text-slate-200 font-bold">{inning.runs}/{inning.wickets}</div>
+                          <div className="text-xs sm:text-sm text-slate-500">({inning.overs} ov)</div>
                         </div>
                       </div>
                     ))}
@@ -335,11 +340,24 @@ export default function MatchDetailPage() {
                     </h2>
                   </div>
                   <div className="p-3 sm:p-6 space-y-4 sm:space-y-6">
-                    {Object.keys(scorecard.teams).map((tid) => {
-                      const t = scorecard.teams[Number(tid)];
-                      const teamName = getTeamName(Number(tid));
+                    {Object.keys(scorecard.innings || {}).map((inningNum) => {
+                      const inning = scorecard.innings[Number(inningNum)];
+                      const teamName = getTeamName(Number(inning.teamId));
+                      const t = inning; // Use same structure
                       return (
-                        <div key={tid} className="bg-slate-800/50 rounded-lg p-3 sm:p-6 border border-slate-700">
+                        <div key={inningNum} className="bg-slate-800/50 rounded-lg p-3 sm:p-6 border border-slate-700">
+                          {/* Inning Header */}
+                          <div className="flex items-center justify-between mb-3 sm:mb-4 pb-2 border-b border-slate-700">
+                            <span className="text-lime-400 font-bold text-sm sm:text-base">
+                              Inning {inningNum}
+                            </span>
+                            {scorecard.format === 'test' && (
+                              <span className="text-xs sm:text-sm text-gray-400 bg-slate-900 px-2 py-1 rounded">
+                                Test Format
+                              </span>
+                            )}
+                          </div>
+                          
                           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4 mb-3 sm:mb-4">
                             <div className="flex items-center space-x-2 sm:space-x-3 min-w-0">
                               <div className="w-10 h-10 sm:w-12 sm:h-12 bg-linear-to-br from-lime-500 to-lime-600 rounded-lg sm:rounded-xl flex items-center justify-center text-black font-bold shadow-md text-xs sm:text-sm shrink-0">

@@ -99,6 +99,8 @@ export default function BallEntry({
   const [inningComplete, setInningComplete] = useState<boolean>(false);
   const [showInningTransition, setShowInningTransition] = useState<boolean>(false);
   const [transitionTimer, setTransitionTimer] = useState<number>(3);
+  const [transitionInning, setTransitionInning] = useState<number>(1); // Track which inning just ended
+  const [transitionNextInning, setTransitionNextInning] = useState<number>(2); // Track next inning
   const [isPolling, setIsPolling] = useState<boolean>(false);
   const [outBatsmen, setOutBatsmen] = useState<Set<number>>(new Set());
   const [restingBowler, setRestingBowler] = useState<number | null>(null);
@@ -373,8 +375,8 @@ export default function BallEntry({
     if (!format) return 4; 
     const formatlower = format.toLowerCase();
     if (formatlower === "odi") return 10;
-    // if (formatlower === "test") return 10; 
-    return 4; 
+    if (formatlower === "test") return Infinity; // No limit for Test matches
+    return 4; // T20 default limit
   };
 
   const fetchSingleMatch = async (matchId: number): Promise<Match | null> => {
@@ -817,14 +819,12 @@ export default function BallEntry({
         }),
       });
 
-      if (response.ok) {
-        const result = await response.json();
-        
-        // Handle inning end all-out
-        if (result.inningEnded) {
-          console.log("[UI] Inning ended:", result);
+        if (response.ok) {
+          const result = await response.json();
           
-          // Update match details
+          // Handle inning end all-out
+          if (result.inningEnded) {
+            console.log("[UI] Inning ended:", result);          // Update match details
           if (result.match) {
             const normalizedMatch: Match = {
               ...result.match,
@@ -856,9 +856,15 @@ export default function BallEntry({
             });
           }, 1000);
           
-          setMessage("✅ Inning 1 completed! Team all out. Preparing Inning 2...");
+          // Dynamic message based on inning that just ended
+          const inningEnded = result.inning || 1;
+          const nextInning = inningEnded + 1;
+          setTransitionInning(inningEnded);
+          setTransitionNextInning(nextInning);
+          setMessage(`✅ Inning ${inningEnded} completed! Team all out. Preparing Inning ${nextInning}...`);
           
           // Reset form for next inning
+          setValue("battingTeamId", 0); // ← RESET BATTING TEAM so user must reselect
           setValue("ballNumber", 0);
           setValue("overNumber", 0);
           setValue("runs", 0);
@@ -866,6 +872,9 @@ export default function BallEntry({
           setValue("wicket", false);
           setValue("eventText", "");
           setValue("extraType", "none");
+          setValue("strikerId", 0); // Reset batsmen
+          setValue("nonStrikerId", 0);
+          setValue("bowlerId", 0); // Reset bowler
           
           // Reset out batsmen and resting bowler for the new inning
           setOutBatsmen(new Set());
@@ -937,18 +946,26 @@ export default function BallEntry({
               const currentOvers = newMap.get(data.bowlerId) || 0;
               newMap.set(data.bowlerId, currentOvers + 1);
               const maxOvers = getMaxOversForFormat(selectedMatchDetails?.format || "t20");
-              console.log(`[UI] Bowler ${data.bowlerId} completed over. Total overs: ${currentOvers + 1}/${maxOvers}`);
-              if (currentOvers + 1 >= maxOvers) {
+              console.log(`[UI] Bowler ${data.bowlerId} completed over. Total overs: ${currentOvers + 1}/${maxOvers === Infinity ? 'Unlimited' : maxOvers}`);
+              if (maxOvers !== Infinity && currentOvers + 1 >= maxOvers) {
                 console.log(`[UI] Bowler ${data.bowlerId} has reached max overs limit (${currentOvers + 1}/${maxOvers}) - PERMANENTLY DISABLED`);
               }
               return newMap;
             });
             
+            // First, do the normal end-of-over swap
             if (data.runs !== 1) {
               const tmp = data.strikerId;
               setValue("strikerId", data.nonStrikerId);
               setValue("nonStrikerId", tmp);
             }
+            
+            // If wicket fell on last ball, clear non-striker field after swap
+            if (data.wicket) {
+              setValue("nonStrikerId", 0);
+              console.log(`[UI] Wicket on last ball: Non-striker field cleared after swap.`);
+            }
+            
             setValue("overNumber", data.overNumber + 1);
             setValue("ballNumber", 0);
             setValue("bowlerId", 0);
@@ -974,8 +991,9 @@ export default function BallEntry({
         setValue("eventText", "");
         setValue("extraType", "none");
         
-        // Clear striker ID if wicket was marked - requires fresh batsman selection
-        if (data.wicket) {
+        // Clear striker ID if wicket was marked - but NOT if it's the last ball of the over
+        // (because the non-striker already moved to striker position)
+        if (data.wicket && ballToSend2 !== 6) {
           setValue("strikerId", 0);
           console.log("[UI] Wicket marked - striker ID cleared");
         }
@@ -1011,8 +1029,8 @@ export default function BallEntry({
               </div>
             </div>
             <div className="space-y-2">
-              <p className="text-lime-400 font-semibold">✅ Inning 1 Completed</p>
-              <p className="text-gray-400 text-sm">Preparing for Inning 2...</p>
+              <p className="text-lime-400 font-semibold">✅ Inning {transitionInning} Completed</p>
+              <p className="text-gray-400 text-sm">Preparing for Inning {transitionNextInning}...</p>
             </div>
           </div>
         </div>
@@ -1153,16 +1171,29 @@ export default function BallEntry({
                     required
                     error={errors.battingTeamId?.message}
                     helperText={
-                      selectedMatchDetails?.inning1_complete
-                        ? `✅ Inning 1 completed! Now select Inning 2 team.`
-                        : ""
+                      (() => {
+                        if (!selectedMatchDetails) return "";
+                        const currentInning = Number(selectedMatchDetails.current_inning) || 1;
+                        const isTest = selectedMatchDetails.format === 'test';
+                        
+                        if (currentInning === 2) {
+                          return `✅ Inning 1 completed! Now select Inning 2 team.`;
+                        }
+                        if (currentInning === 3 && isTest) {
+                          return `✅ Inning 2 completed! Now select Inning 3 team (same as Inning 1).`;
+                        }
+                        if (currentInning === 4 && isTest) {
+                          return `✅ Inning 3 completed! Now select Inning 4 team (same as Inning 2).`;
+                        }
+                        return "";
+                      })()
                     }
                   >
                     <div className="space-y-2">
                       <select
                         {...register("battingTeamId", { valueAsNumber: true })}
                         value={battingTeamId}
-                        key={`${selectedMatch}-${selectedMatchDetails?.inning1_complete}`}
+                        key={`${selectedMatch}-${selectedMatchDetails?.current_inning}`}
                         className={`w-full p-3 border-2 rounded-lg focus:ring-2 focus:ring-lime-500 focus:border-lime-500 transition-all bg-slate-800 text-white ${
                           errors.battingTeamId
                             ? "border-red-500"
@@ -1175,15 +1206,40 @@ export default function BallEntry({
                           teams
                             .filter((t) => {
                               if (!matchTeamIds.includes(t.id)) return false;
-                              // If inning 1 is complete, only show the other team
-                              if (currentMatch.inning1_complete) {
-                                const inning1TeamId = Number(
-                                  currentMatch.inning1_team_id
-                                );
-                                return Number(t.id) !== inning1TeamId;
+                              
+                              const currentInning = Number(currentMatch.current_inning) || 1;
+                              const inning1TeamId = Number(currentMatch.inning1_team_id);
+                              const isTestFormat = currentMatch.format === 'test';
+                              
+                              // For test format with 4 innings
+                              if (isTestFormat) {
+                                // Inning 1: Both teams can be selected
+                                if (currentInning === 1) {
+                                  return true;
+                                }
+                                // Inning 2: Only the OTHER team (not team from inning 1)
+                                if (currentInning === 2) {
+                                  return Number(t.id) !== inning1TeamId;
+                                }
+                                // Inning 3: Same team as inning 1
+                                if (currentInning === 3) {
+                                  return Number(t.id) === inning1TeamId;
+                                }
+                                // Inning 4: Same team as inning 2 (the other team)
+                                if (currentInning === 4) {
+                                  return Number(t.id) !== inning1TeamId;
+                                }
+                              } else {
+                                // For non-test formats (2 innings only)
+                                if (currentInning === 1) {
+                                  return true;
+                                }
+                                if (currentInning === 2) {
+                                  return Number(t.id) !== inning1TeamId;
+                                }
                               }
-                              // If inning 1 is not complete, show both teams
-                              return true;
+                              
+                              return false;
                             })
                             .map((team) => (
                               <option key={team.id} value={team.id}>
@@ -1368,19 +1424,20 @@ export default function BallEntry({
                         // Exclude resting bowler
                         if (p.id === restingBowler) return false;
                         
-                        // Exclude bowlers who have completed max overs
+                        // Exclude bowlers who have completed max overs (but not for Test matches)
                         const bowlerOvers = bowlerOversMap.get(p.id) || 0;
                         const maxOvers = getMaxOversForFormat(selectedMatchDetails?.format || "t20");
-                        if (bowlerOvers >= maxOvers) return false;
+                        if (maxOvers !== Infinity && bowlerOvers >= maxOvers) return false;
                         
                         return true;
                       })
                       .map((player) => {
                         const bowlerOvers = bowlerOversMap.get(player.id) || 0;
                         const maxOvers = getMaxOversForFormat(selectedMatchDetails?.format || "t20");
+                        const oversDisplay = maxOvers === Infinity ? `${bowlerOvers}/∞` : `${bowlerOvers}/${maxOvers}`;
                         return (
                           <option key={player.id} value={player.id}>
-                            {player.name} ({bowlerOvers}/{maxOvers} overs)
+                            {player.name} ({oversDisplay} overs)
                           </option>
                         );
                       })}

@@ -5,7 +5,7 @@ import { verifyToken, isSuperadmin, isAdmin, isAuthenticated } from "../middlewa
 
 const router: Router = Router();
 
-// Helper function to determine format based on overs per inning
+//  to determine format based on overs per inning
 function getFormatFromOvers(oversPerInning: number): string {
   if (oversPerInning <= 1) return "1over";
   if (oversPerInning <= 20) return "t20";
@@ -13,13 +13,9 @@ function getFormatFromOvers(oversPerInning: number): string {
   return "test";
 }
 
-// Helper function to calculate best bowling for a bowler in a match
-// Best bowling = Best single-match performance (wickets/runs)
-// Rules: Compare by wickets first (more is better), then by runs (fewer is better)
+// to calculate best bowling for a bowler in a match
 async function updateBestBowling(bowlerId: number, teamId: number, format: any, matchId: any) {
   try {
-    // Get all bowling performances by this bowler in all matches for this team/format
-    // Note: We need to find matches where this bowler's team is NOT the batting team
     const bowlingPerformancesQuery = `
       SELECT 
         m.id as match_id,
@@ -47,7 +43,6 @@ async function updateBestBowling(bowlerId: number, teamId: number, format: any, 
       return "0/0";
     }
     
-    // Get the best performance (first row after sorting)
     const bestPerf = result.rows[0];
     const bestBowling = `${bestPerf.match_wickets}/${bestPerf.match_runs || 0}`;
     
@@ -69,19 +64,65 @@ async function updateBestBowling(bowlerId: number, teamId: number, format: any, 
   }
 }
 
-// Helper function to update highest_score for all batsmen at end of inning
-async function updateHighestScoreForInning(matchId: number, battingTeamId: number, format: any) {
+// update half_centuries and centuries when a batsman gets out
+async function updateBatsmanMilestones(matchId: number, batsmanId: number, battingTeamId: number, format: string, inningNumber: number) {
   try {
-    console.log(`[HighestScore-Inning] Updating highest_score for all batsmen in inning (Team ${battingTeamId}, Match ${matchId})`);
+    // Calculate batsman's inning score 
+    const inningScoreQuery = await pool.query(
+      `SELECT SUM(b.runs) as inning_total
+       FROM balls b
+       JOIN overs o ON b.over_id = o.id
+       WHERE o.match_id = $1 AND b.batsman_id = $2 AND o.batting_team_id = $3 AND o.inning_number = $4`,
+      [matchId, batsmanId, battingTeamId, inningNumber]
+    );
+    
+    const inningScore = parseInt(inningScoreQuery.rows[0]?.inning_total) || 0;
+    
+    // Determine if this inning qualifies for half_century or century
+    let halfCenturiesToAdd = 0;
+    let centuriesToAdd = 0;
+    
+    // Half-century
+    if (inningScore >= 50 && inningScore < 100) {
+      halfCenturiesToAdd = 1;
+    }
+    
+    // Century: score is 100+
+    if (inningScore >= 100) {
+      centuriesToAdd = 1;
+    }
+    
+    if (halfCenturiesToAdd > 0 || centuriesToAdd > 0) {
+      // Update player_stats with half_centuries and centuries
+      await pool.query(
+        `UPDATE player_stats 
+         SET half_centuries = half_centuries + $1,
+             centuries = centuries + $2,
+             updated_at = NOW()
+         WHERE player_id = $3 AND team_id = $4 AND format = $5`,
+        [halfCenturiesToAdd, centuriesToAdd, batsmanId, battingTeamId, format]
+      );
+      
+      console.log(`[Milestone] Batsman ${batsmanId}: inning_score=${inningScore}, half_centuries+=\${halfCenturiesToAdd}, centuries+=\${centuriesToAdd}`);
+    }
+  } catch (err) {
+    console.error("Error updating batsman milestones:", err);
+  }
+}
+
+// Helper function to update highest_score, half_centuries, and centuries for all batsmen at end of inning
+async function updateHighestScoreForInning(matchId: number, battingTeamId: number, format: any, inningNumber: number) {
+  try {
+    console.log(`[HighestScore-Inning] Updating highest_score for all batsmen in inning ${inningNumber} (Team ${battingTeamId}, Match ${matchId})`);
     
     // Get all batsmen and their inning scores
     const batsmensQuery = await pool.query(
       `SELECT DISTINCT b.batsman_id, SUM(b.runs) as inning_total
        FROM balls b
        JOIN overs o ON b.over_id = o.id
-       WHERE o.match_id = $1 AND o.batting_team_id = $2
+       WHERE o.match_id = $1 AND o.batting_team_id = $2 AND o.inning_number = $3
        GROUP BY b.batsman_id`,
-      [matchId, battingTeamId]
+      [matchId, battingTeamId, inningNumber]
     );
     
     console.log(`[HighestScore-Inning] Found ${batsmensQuery.rows.length} batsmen to update`);
@@ -129,11 +170,15 @@ async function checkAndCompleteMatchIfNeeded(matchId: number) {
     match.team2 = parseInt(match.team2);
     match.inning1_team_id = match.inning1_team_id ? parseInt(match.inning1_team_id) : null;
 
-    if (match.current_inning !== 2 || match.match_status === 'completed') {
+    // to determine which inning should trigger completion
+    const isTestFormat = match.format === 'test';
+    const completionInning = isTestFormat ? 4 : 2;
+    
+    if (match.current_inning !== completionInning || match.match_status === 'completed') {
       return null;
     }
 
-    // Get current scores for both teams - SEPARATED BY INNING
+    // Get current scores for both teams 
     const inning1TeamId = match.inning1_team_id || match.team1;
     const inning2TeamId = inning1TeamId === match.team1 ? match.team2 : match.team1;
 
@@ -145,7 +190,7 @@ async function checkAndCompleteMatchIfNeeded(matchId: number) {
         COUNT(CASE WHEN b.is_wicket THEN 1 END) as wickets
       FROM overs o
       LEFT JOIN balls b ON b.over_id = o.id
-      WHERE o.match_id = $1 AND o.batting_team_id = $2
+      WHERE o.match_id = $1 AND o.batting_team_id = $2 AND o.inning_number = 1
       GROUP BY o.batting_team_id
     `;
 
@@ -165,7 +210,7 @@ async function checkAndCompleteMatchIfNeeded(matchId: number) {
         COUNT(CASE WHEN b.is_wicket THEN 1 END) as wickets
       FROM overs o
       LEFT JOIN balls b ON b.over_id = o.id
-      WHERE o.match_id = $1 AND o.batting_team_id = $2
+      WHERE o.match_id = $1 AND o.batting_team_id = $2 AND o.inning_number = 2
       GROUP BY o.batting_team_id
     `;
 
@@ -216,34 +261,141 @@ async function checkAndCompleteMatchIfNeeded(matchId: number) {
     const inning2WicketsNum = Math.max(0, Math.min(10, parseInt(String(inning2Wickets)) || 0));
     const inning1WicketsNum = Math.max(0, Math.min(10, parseInt(String(inning1Wickets)) || 0));
 
-    // Check winning conditions
-    // Scenario 1: Chasing team EXCEEDS the target with wickets remaining (must be strictly greater, not equal)
-    if (inning2Score > inning1Score && inning2WicketsNum < 10) {
-      shouldComplete = true;
-      winner = inning2TeamId;
-      const wicketsRemaining = 10 - inning2WicketsNum;
-      const winnerName = inning2TeamId === match.team1 ? match.team1_name : match.team2_name;
-      result_description = `${winnerName} won by ${wicketsRemaining} wicket${wicketsRemaining === 1 ? '' : 's'}`;
-      console.log(`[Match-Complete] Scenario 1: Chasing team (${inning2TeamId}) scored ${inning2Score} > target ${inning1Score} with ${wicketsRemaining} wickets remaining`);
-    }
-    // Scenario 2: Chasing team scores more runs but uses all/most wickets (all out but still ahead)
-    else if (inning2Score > inning1Score && inning2WicketsNum >= 10) {
-      shouldComplete = true;
-      winner = inning2TeamId;
-      // For a team that's all-out but exceeded the target, show runs margin
-      const runMargin = inning2Score - inning1Score;
-      const winnerName = inning2TeamId === match.team1 ? match.team1_name : match.team2_name;
-      result_description = `${winnerName} won by ${runMargin} run${runMargin === 1 ? '' : 's'}`;
-      console.log(`[Match-Complete] Scenario 2: Chasing team (${inning2TeamId}) scored ${inning2Score} > target ${inning1Score} but all out - won by ${runMargin} runs`);
-    }
-    // Scenario 3: Chasing team all out without reaching target
-    else if (inning2WicketsNum >= 10 && inning2Score < inning1Score) {
-      shouldComplete = true;
-      winner = inning1TeamId;
-      const margin = inning1Score - inning2Score;
-      const winnerName = inning1TeamId === match.team1 ? match.team1_name : match.team2_name;
-      result_description = `${winnerName} won by ${margin} runs`;
-      console.log(`[Match-Complete] Scenario 3: Inning 1 team (${inning1TeamId}) wins as chasing team all-out with ${inning2Score} runs`);
+    // For test format: Calculate cumulative scores from all 4 innings
+    if (isTestFormat) {
+      // Query inning 3 and inning 4 scores
+      const inning3ScoreQuery = `
+        SELECT 
+          o.batting_team_id,
+          SUM(b.runs + COALESCE(CAST(b.extras AS INTEGER), 0)) as total_runs,
+          COUNT(CASE WHEN b.is_wicket THEN 1 END) as wickets
+        FROM overs o
+        LEFT JOIN balls b ON b.over_id = o.id
+        WHERE o.match_id = $1 AND o.batting_team_id = $2 AND o.inning_number = 3
+        GROUP BY o.batting_team_id
+      `;
+      
+      const inning3Result = await pool.query(inning3ScoreQuery, [matchId, inning1TeamId]);
+      let inning3Score = 0;
+      if (inning3Result.rows.length > 0) {
+        inning3Score = parseInt(inning3Result.rows[0].total_runs) || 0;
+      }
+
+      const inning4ScoreQuery = `
+        SELECT 
+          o.batting_team_id,
+          SUM(b.runs + COALESCE(CAST(b.extras AS INTEGER), 0)) as total_runs,
+          COUNT(CASE WHEN b.is_wicket THEN 1 END) as wickets
+        FROM overs o
+        LEFT JOIN balls b ON b.over_id = o.id
+        WHERE o.match_id = $1 AND o.batting_team_id = $2 AND o.inning_number = 4
+        GROUP BY o.batting_team_id
+      `;
+      
+      const inning4Result = await pool.query(inning4ScoreQuery, [matchId, inning2TeamId]);
+      let inning4Score = 0;
+      let inning4Wickets = 0;
+      if (inning4Result.rows.length > 0) {
+        inning4Score = parseInt(inning4Result.rows[0].total_runs) || 0;
+        inning4Wickets = parseInt(inning4Result.rows[0].wickets) || 0;
+      }
+
+      // Calculate cumulative scores
+      const team1TotalForTest = inning1Score + inning3Score;
+      const team2TotalForTest = inning2Score + inning4Score;
+
+      console.log(`[Match-Complete-Test] Inning 1: ${inning1Score}, Inning 3: ${inning3Score}, Team 1 Total: ${team1TotalForTest}`);
+      console.log(`[Match-Complete-Test] Inning 2: ${inning2Score}, Inning 4: ${inning4Score}, Team 2 Total: ${team2TotalForTest}`);
+      console.log(`[Match-Complete-Test] Inning 4 Wickets: ${inning4Wickets}`);
+
+      // Check if match should complete
+      // Match completes only when:
+      // 1. Chasing team (inning 4) exceeds target, OR
+      // 2. Chasing team (inning 4) is all out (10 wickets), OR
+      // 3. All overs completed (checked via inning4_complete flag in match table)
+      
+      const matchInningStatusQuery = await pool.query(
+        `SELECT inning4_complete FROM matches WHERE id = $1`,
+        [matchId]
+      );
+      const inning4Complete = matchInningStatusQuery.rows[0]?.inning4_complete || false;
+
+      // Condition 1: Team 2 exceeded target - they won
+      if (team2TotalForTest > team1TotalForTest) {
+        shouldComplete = true;
+        winner = inning2TeamId;
+        const wicketsRemaining = 10 - inning4Wickets;
+        const winnerName = inning2TeamId === match.team1 ? match.team1_name : match.team2_name;
+        result_description = `${winnerName} won by ${wicketsRemaining} wicket${wicketsRemaining === 1 ? '' : 's'}`;
+        console.log(`[Match-Complete-Test] ${winnerName} (Team ${inning2TeamId}) won by ${wicketsRemaining} wickets`);
+      }
+      // Condition 2: Team 2 all out (10 wickets) - match complete based on scores
+      else if (inning4Wickets >= 10) {
+        shouldComplete = true;
+        if (team1TotalForTest > team2TotalForTest) {
+          winner = inning1TeamId;
+          const margin = team1TotalForTest - team2TotalForTest;
+          const winnerName = inning1TeamId === match.team1 ? match.team1_name : match.team2_name;
+          result_description = `${winnerName} won by ${margin} run${margin === 1 ? '' : 's'}`;
+          console.log(`[Match-Complete-Test] ${winnerName} (Team ${inning1TeamId}) won by ${margin} runs (inning 4 all out)`);
+        } else {
+          // Equal scores with inning 4 all out - Team 1 wins
+          winner = inning1TeamId;
+          const winnerName = inning1TeamId === match.team1 ? match.team1_name : match.team2_name;
+          result_description = `${winnerName} won (opponents all out with tied score)`;
+          console.log(`[Match-Complete-Test] ${winnerName} (Team ${inning1TeamId}) won - Team 2 all out with tied score`);
+        }
+      }
+      // Condition 3: All overs completed (inning4_complete flag set by over completion logic)
+      else if (inning4Complete) {
+        shouldComplete = true;
+        if (team1TotalForTest > team2TotalForTest) {
+          winner = inning1TeamId;
+          const margin = team1TotalForTest - team2TotalForTest;
+          const winnerName = inning1TeamId === match.team1 ? match.team1_name : match.team2_name;
+          result_description = `${winnerName} won by ${margin} run${margin === 1 ? '' : 's'}`;
+          console.log(`[Match-Complete-Test] ${winnerName} (Team ${inning1TeamId}) won by ${margin} runs (all overs complete)`);
+        } else {
+          // Equal scores with all overs complete - genuine draw
+          winner = null;
+          result_description = `Match drawn! Both teams scored ${team1TotalForTest} runs`;
+          console.log(`[Match-Complete-Test] Match is a draw! Both teams tied at ${team1TotalForTest} runs`);
+        }
+      } else {
+        // Match is still in progress - don't complete yet
+        shouldComplete = false;
+        console.log(`[Match-Complete-Test] Match still in progress. Team 2: ${team2TotalForTest}/${inning4Wickets}, Target: ${team1TotalForTest + 1}`);
+      }
+    } else {
+      // Check winning conditions for non-test formats
+      // Scenario 1: Chasing team EXCEEDS the target with wickets remaining (must be strictly greater, not equal)
+      if (inning2Score > inning1Score && inning2WicketsNum < 10) {
+        shouldComplete = true;
+        winner = inning2TeamId;
+        const wicketsRemaining = 10 - inning2WicketsNum;
+        const winnerName = inning2TeamId === match.team1 ? match.team1_name : match.team2_name;
+        result_description = `${winnerName} won by ${wicketsRemaining} wicket${wicketsRemaining === 1 ? '' : 's'}`;
+        console.log(`[Match-Complete] Scenario 1: Chasing team (${inning2TeamId}) scored ${inning2Score} > target ${inning1Score} with ${wicketsRemaining} wickets remaining`);
+      }
+      // Scenario 2: Chasing team scores more runs but uses all/most wickets (all out but still ahead)
+      else if (inning2Score > inning1Score && inning2WicketsNum >= 10) {
+        shouldComplete = true;
+        winner = inning2TeamId;
+        // For a team that's all-out but exceeded the target, show runs margin
+        const runMargin = inning2Score - inning1Score;
+        const winnerName = inning2TeamId === match.team1 ? match.team1_name : match.team2_name;
+        result_description = `${winnerName} won by ${runMargin} run${runMargin === 1 ? '' : 's'}`;
+        console.log(`[Match-Complete] Scenario 2: Chasing team (${inning2TeamId}) scored ${inning2Score} > target ${inning1Score} but all out - won by ${runMargin} runs`);
+      }
+      // Scenario 3: Chasing team all out without reaching target
+      else if (inning2WicketsNum >= 10 && inning2Score < inning1Score) {
+        shouldComplete = true;
+        winner = inning1TeamId;
+        const margin = inning1Score - inning2Score;
+        const winnerName = inning1TeamId === match.team1 ? match.team1_name : match.team2_name;
+        result_description = `${winnerName} won by ${margin} runs`;
+        console.log(`[Match-Complete] Scenario 3: Inning 1 team (${inning1TeamId}) wins as chasing team all-out with ${inning2Score} runs`);
+      }
     }
 
     if (shouldComplete) {
@@ -256,9 +408,18 @@ async function checkAndCompleteMatchIfNeeded(matchId: number) {
       const inning1TeamId = parseInt(matchDetailsQuery.rows[0]?.inning1_team_id);
       const inning2TeamId = inning1TeamId === match.team1 ? match.team2 : match.team1;
       
-      // Update highest_score for both teams
-      await updateHighestScoreForInning(matchId, inning1TeamId, format);
-      await updateHighestScoreForInning(matchId, inning2TeamId, format);
+      // Update highest_score for all innings
+      if (format === 'test') {
+        // Test format: Update all 4 innings
+        await updateHighestScoreForInning(matchId, inning1TeamId, format, 1);
+        await updateHighestScoreForInning(matchId, inning2TeamId, format, 2);
+        await updateHighestScoreForInning(matchId, inning1TeamId, format, 3);
+        await updateHighestScoreForInning(matchId, inning2TeamId, format, 4);
+      } else {
+        // Other formats: Update 2 innings
+        await updateHighestScoreForInning(matchId, inning1TeamId, format, 1);
+        await updateHighestScoreForInning(matchId, inning2TeamId, format, 2);
+      }
       
       // Update match with completion status
       const updateResult = await pool.query(
@@ -354,7 +515,7 @@ router.post("/", verifyToken, isSuperadmin, async (req, res) => {
   try {
     const format = getFormatFromOvers(overs_per_inning);
     
-    // Randomly decide which team bats first in inning 1 (real cricket: coin toss)
+    // Randomly decide which team bats first in inning 1
     const inning1Team = Math.random() > 0.5 ? team1 : team2;
     
     const result = await pool.query(
@@ -366,7 +527,7 @@ router.post("/", verifyToken, isSuperadmin, async (req, res) => {
     
     console.log(`[Match] Created match ${matchId} between team ${team1} and team ${team2}. Team ${inning1Team} will bat first in Inning 1.`);
     
-    // Increment match count for all players in both teams (real-world cricket rule)
+    // Increment match count for all players in both teams
     const playersResult = await pool.query(
       "SELECT id, team_id FROM players WHERE team_id IN ($1, $2)",
       [team1, team2]
@@ -463,6 +624,20 @@ router.put("/:id/complete", verifyToken, isAdmin, async (req, res) => {
     }
     const match = matchResult.rows[0];
 
+    // Check if match is in correct inning for completion
+    const isTestFormat = match.format === 'test';
+    const validInning = isTestFormat ? 4 : 2;
+    
+    if (match.current_inning !== validInning) {
+      return res.status(400).json({ 
+        error: `Can only complete match in inning ${validInning} for ${match.format} format. Current inning: ${match.current_inning}` 
+      });
+    }
+
+    if (match.match_status === 'completed') {
+      return res.status(400).json({ error: "Match is already completed" });
+    }
+
     // Get scores for both teams
     const scoreQuery = `
       SELECT 
@@ -483,16 +658,61 @@ router.put("/:id/complete", verifyToken, isAdmin, async (req, res) => {
     let team1Wickets = 0;
     let team2Wickets = 0;
 
-    for (const row of scoreResult.rows) {
-      const runs = parseInt(row.total_runs) || 0;
-      const wickets = parseInt(row.wickets) || 0;
+    // For test format, we need to sum scores across all innings per team
+    if (isTestFormat) {
+      // Team 1 bats in innings 1 and 3
+      // Team 2 bats in innings 2 and 4
+      const inning1TeamId = match.inning1_team_id || match.team1;
+      const inning2TeamId = inning1TeamId === match.team1 ? match.team2 : match.team1;
+      
+      let inning1Score = 0, inning2Score = 0, inning3Score = 0, inning4Score = 0;
+      
+      for (const row of scoreResult.rows) {
+        const runs = parseInt(row.total_runs) || 0;
+        const wickets = parseInt(row.wickets) || 0;
 
-      if (row.batting_team_id === match.team1) {
-        team1Score = runs;
-        team1Wickets = wickets;
-      } else if (row.batting_team_id === match.team2) {
-        team2Score = runs;
-        team2Wickets = wickets;
+        if (row.batting_team_id === inning1TeamId) {
+          // This team batted in innings 1 and 3
+          if (inning1Score === 0) {
+            inning1Score = runs;
+          } else {
+            inning3Score = runs;
+          }
+          team1Wickets += wickets;
+        } else if (row.batting_team_id === inning2TeamId) {
+          // This team batted in innings 2 and 4
+          if (inning2Score === 0) {
+            inning2Score = runs;
+          } else {
+            inning4Score = runs;
+          }
+          team2Wickets += wickets;
+        }
+      }
+      
+      // Calculate cumulative scores
+      if (inning1TeamId === match.team1) {
+        team1Score = inning1Score + inning3Score;
+        team2Score = inning2Score + inning4Score;
+      } else {
+        team1Score = inning2Score + inning4Score;
+        team2Score = inning1Score + inning3Score;
+      }
+      
+      console.log(`[Manual-Complete-Test] Team 1 Total: ${team1Score}, Team 2 Total: ${team2Score}`);
+    } else {
+      // For non-test formats, simple score aggregation
+      for (const row of scoreResult.rows) {
+        const runs = parseInt(row.total_runs) || 0;
+        const wickets = parseInt(row.wickets) || 0;
+
+        if (row.batting_team_id === match.team1) {
+          team1Score = runs;
+          team1Wickets = wickets;
+        } else if (row.batting_team_id === match.team2) {
+          team2Score = runs;
+          team2Wickets = wickets;
+        }
       }
     }
 
@@ -578,36 +798,39 @@ router.get("/:id/score", async (req, res) => {
       return res.status(404).send("Match not found");
     }
     const match = matchResult.rows[0];
+    const format = match.format || 'odi';
 
-    // Aggregate scores per team
+    // Aggregate scores per team per inning
     const scoreQuery = `
       SELECT 
         o.batting_team_id,
+        o.inning_number,
         SUM(b.runs + COALESCE(CAST(b.extras AS INTEGER), 0)) as total_runs,
         COUNT(CASE WHEN b.is_wicket THEN 1 END) as wickets,
         COALESCE(MAX(o.over_number), 1) - 1 as completed_overs,
-        MAX(CASE WHEN o.over_number = (SELECT MAX(over_number) FROM overs WHERE match_id = $1 AND batting_team_id = o.batting_team_id) 
+        MAX(CASE WHEN o.over_number = (SELECT MAX(over_number) FROM overs WHERE match_id = $1 AND batting_team_id = o.batting_team_id AND inning_number = o.inning_number) 
             THEN (SELECT SUM(CASE WHEN NOT ((COALESCE(extras,'0') ~* '^(wide|wd|no-?ball|nb)') OR (COALESCE(event,'') ~* '^(wide|wd|no-?ball|nb)')) THEN 1 ELSE 0 END) FROM balls WHERE over_id = o.id) 
             ELSE 0 END) as balls_in_current_over
       FROM overs o
       LEFT JOIN balls b ON b.over_id = o.id
       WHERE o.match_id = $1 AND o.batting_team_id IS NOT NULL
-      GROUP BY o.batting_team_id
+      GROUP BY o.batting_team_id, o.inning_number
+      ORDER BY o.inning_number
     `;
 
     const scoreResult = await pool.query(scoreQuery, [id]);
 
-    const scores = scoreResult.rows.map((row) => {
+    const innings = scoreResult.rows.map((row) => {
       let completedOvers = parseInt(row.completed_overs) || 0;
       let ballsInOver = parseInt(row.balls_in_current_over) || 0;
 
-      // Handle rollover: if balls >= 6, add to completed overs
       if (ballsInOver >= 6) {
         completedOvers += Math.floor(ballsInOver / 6);
         ballsInOver = ballsInOver % 6;
       }
 
       return {
+        inningNumber: row.inning_number,
         teamId: row.batting_team_id,
         runs: parseInt(row.total_runs) || 0,
         wickets: parseInt(row.wickets) || 0,
@@ -619,7 +842,8 @@ router.get("/:id/score", async (req, res) => {
       matchId: parseInt(id),
       team1: match.team1,
       team2: match.team2,
-      scores,
+      format,
+      innings,
     });
   } catch (err) {
     console.error("Error fetching match score:", err);
@@ -660,7 +884,6 @@ router.get("/:id/teams/:teamId/score", async (req, res) => {
     let completedOvers = parseInt(row.completed_overs) || 0;
     let ballsInOver = parseInt(row.balls_in_current_over) || 0;
 
-    // Handle rollover: if balls >= 6, add to completed overs
     if (ballsInOver >= 6) {
       completedOvers += Math.floor(ballsInOver / 6);
       ballsInOver = ballsInOver % 6;
@@ -700,9 +923,9 @@ router.post("/:matchId/ball", verifyToken, isAdmin, async (req, res) => {
   } = req.body;
 
   try {
-    // Verify match exists
+    // Verify match exists and get current inning
     const matchCheck = await pool.query(
-      "SELECT id, match_status FROM matches WHERE id = $1",
+      "SELECT id, match_status, current_inning FROM matches WHERE id = $1",
       [matchId]
     );
     
@@ -711,24 +934,25 @@ router.post("/:matchId/ball", verifyToken, isAdmin, async (req, res) => {
     }
 
     const match = matchCheck.rows[0];
+    const currentInning = parseInt(match.current_inning) || 1;
 
     // Prevent adding balls to completed matches
     if (match.match_status === 'completed') {
       return res.status(400).json({ error: "Match is already completed" });
     }
 
-    // Find or create the over
+    // Find or create the over (now with inning_number for proper separation)
     let overResult = await pool.query(
-      "SELECT id FROM overs WHERE match_id = $1 AND over_number = $2 AND batting_team_id = $3",
-      [matchId, overNumber, battingTeamId]
+      "SELECT id FROM overs WHERE match_id = $1 AND over_number = $2 AND batting_team_id = $3 AND inning_number = $4",
+      [matchId, overNumber, battingTeamId, currentInning]
     );
 
     let overId;
     if (overResult.rows.length === 0) {
-      // Create new over if it doesn't exist
+      // Create new over if it doesn't exist (with inning_number for proper tracking)
       const newOver = await pool.query(
-        "INSERT INTO overs (match_id, over_number, batting_team_id) VALUES ($1, $2, $3) RETURNING id",
-        [matchId, overNumber, battingTeamId]
+        "INSERT INTO overs (match_id, over_number, batting_team_id, inning_number) VALUES ($1, $2, $3, $4) RETURNING id",
+        [matchId, overNumber, battingTeamId, currentInning]
       );
       overId = newOver.rows[0].id;
     } else {
@@ -790,7 +1014,7 @@ router.post("/:matchId/ball", verifyToken, isAdmin, async (req, res) => {
         const isFour = runsScored === 4 ? 1 : 0;
         const isSix = runsScored === 6 ? 1 : 0;
 
-        // Calculate batsman's current inning score (BEFORE this ball was inserted)
+        // Calculate batsman's current inning score
         // We need to exclude the current ball and any extras from this delivery
         const batsmanInningScoreQuery = `
           SELECT SUM(b.runs) as inning_runs
@@ -844,6 +1068,11 @@ router.post("/:matchId/ball", verifyToken, isAdmin, async (req, res) => {
 
         console.log(`[Stats] Batsman ${batsmanId} updated, affected rows:`, batsmanResult.rowCount);
 
+        // If batsman got out, update milestones (50s and 100s)
+        if (isWicket) {
+          await updateBatsmanMilestones(parseInt(matchId), batsmanId, battingTeamId, format, currentInning);
+        }
+
         // Emit stats update via socket.io
         if (io) {
           io.to(`match_${matchId}`).emit("statsUpdated", {
@@ -877,18 +1106,12 @@ router.post("/:matchId/ball", verifyToken, isAdmin, async (req, res) => {
           const runsGiven = (runs || 0) + (extras ? parseInt(extras) : 0);
           const wicketCount = isWicket ? 1 : 0;
           
-          // Calculate overs in cricket notation with proper conversion
-          // 0.1, 0.2, 0.3, 0.4, 0.5, then 1.0 (NOT 0.6!)
-          // 1.1, 1.2, 1.3, 1.4, 1.5, then 2.0 (NOT 1.6!)
           const ballInOver = ((ballNumber - 1) % 6) + 1; // 1-6
           
           let oversToAdd: number;
           if (ballInOver === 6) {
-            // 6th ball completes the over: add 0.5 to make decimal part = 1.0
-            // E.g., 0.5 + 0.5 = 1.0, or 1.5 + 0.5 = 2.0
             oversToAdd = 0.5;
           } else {
-            // Balls 1-5: add 0.1 each
             oversToAdd = 0.1;
           }
 
@@ -927,7 +1150,7 @@ router.post("/:matchId/ball", verifyToken, isAdmin, async (req, res) => {
 
           console.log(`[Stats] Bowler ${bowlerId} updated, affected rows:`, bowlerResult.rowCount);
 
-          // Update best bowling for this bowler (based on best single-match performance)
+          // Update best bowling for this bowler
           await updateBestBowling(parseInt(bowlerId), bowlingTeamId, format, matchId);
 
           // Emit stats update via socket.io
@@ -944,15 +1167,15 @@ router.post("/:matchId/ball", verifyToken, isAdmin, async (req, res) => {
       }
     }
 
-    // Check if batting team is all out (10 wickets fallen)
+    // Check if batting team is all out 
     if (isWicket) {
       try {
         const wicketsInInningQuery = await pool.query(
           `SELECT COUNT(CASE WHEN b.is_wicket THEN 1 END) as total_wickets
            FROM balls b
            JOIN overs o ON b.over_id = o.id
-           WHERE o.match_id = $1 AND o.batting_team_id = $2`,
-          [matchId, battingTeamId]
+           WHERE o.match_id = $1 AND o.batting_team_id = $2 AND o.inning_number = $3`,
+          [matchId, battingTeamId, currentInning]
         );
         const totalWicketsInInning = parseInt(wicketsInInningQuery.rows[0]?.total_wickets) || 0;
 
@@ -962,40 +1185,42 @@ router.post("/:matchId/ball", verifyToken, isAdmin, async (req, res) => {
           
           // Get match details
           const matchCheckQuery = await pool.query(
-            `SELECT m.current_inning, m.team1, m.team2, m.inning1_team_id
+            `SELECT m.current_inning, m.team1, m.team2, m.inning1_team_id, m.format
              FROM matches m
              WHERE m.id = $1`,
             [matchId]
           );
           
           const currentInning = matchCheckQuery.rows[0]?.current_inning;
+          const format = matchCheckQuery.rows[0]?.format;
           const team1 = parseInt(matchCheckQuery.rows[0]?.team1);
           const team2 = parseInt(matchCheckQuery.rows[0]?.team2);
           const inning1TeamId = parseInt(matchCheckQuery.rows[0]?.inning1_team_id);
           
           // inning2TeamId is the other team
           const inning2TeamId = inning1TeamId === team1 ? team2 : team1;
+          // For test format
+          const inning3TeamId = inning1TeamId;
+          const inning4TeamId = inning2TeamId;
 
-          console.log(`[AllOut-DEBUG] battingTeamId=${battingTeamId}, team1=${team1}, team2=${team2}, inning1TeamId=${inning1TeamId}, inning2TeamId=${inning2TeamId}`);
+          console.log(`[AllOut-DEBUG] battingTeamId=${battingTeamId}, team1=${team1}, team2=${team2}, inning1TeamId=${inning1TeamId}, inning2TeamId=${inning2TeamId}, format=${format}, currentInning=${currentInning}`);
+
+          // Get match format for conditional logic
+          const isTestFormat = format === 'test';
 
           if (currentInning === 1) {
             // Inning 1 complete, mark it and move to inning 2
             const updateResult = await pool.query(
               `UPDATE matches 
-               SET inning1_complete = true, current_inning = 2
-               WHERE id = $1
+               SET inning1_complete = true, current_inning = 2, inning2_team_id = $1
+               WHERE id = $2
                RETURNING *`,
-              [matchId]
+              [inning2TeamId, matchId]
             );
             
             // Update highest_score for all batsmen in this inning
-            const matchDetailsQuery = await pool.query(
-              `SELECT format FROM matches WHERE id = $1`,
-              [parseInt(matchId)]
-            );
-            const format = matchDetailsQuery.rows[0]?.format as any;
             const battingTeamIdNum = parseInt(battingTeamId as any);
-            await updateHighestScoreForInning(parseInt(matchId), battingTeamIdNum, format);
+            await updateHighestScoreForInning(parseInt(matchId), battingTeamIdNum, format, 1);
             
             console.log(`[AllOut] Inning 1 ended. Moving to Inning 2. Team ${inning2TeamId} will bat now.`);
 
@@ -1009,7 +1234,6 @@ router.post("/:matchId/ball", verifyToken, isAdmin, async (req, res) => {
               });
             }
             
-            // Return match object in same format as checkAndCompleteMatchIfNeeded for UI consistency
             return res.status(201).json({
               completed: false,
               inningEnded: true,
@@ -1017,43 +1241,128 @@ router.post("/:matchId/ball", verifyToken, isAdmin, async (req, res) => {
               match: updateResult.rows[0],
             });
           } else if (currentInning === 2) {
-            // Inning 2 complete - team from inning 1 wins
-            
             // Update highest_score for all batsmen in inning 2
-            const matchDetailsQuery = await pool.query(
-              `SELECT format FROM matches WHERE id = $1`,
-              [parseInt(matchId)]
-            );
-            const format = matchDetailsQuery.rows[0]?.format as any;
             const battingTeamIdNum = parseInt(battingTeamId as any);
-            await updateHighestScoreForInning(parseInt(matchId), battingTeamIdNum, format);
-            
-            const resultDescription = `${inning1TeamId === team1 ? 'Team 1' : 'Team 2'} won (inning 2 all out)`;
+            await updateHighestScoreForInning(parseInt(matchId), battingTeamIdNum, format, 2);
 
+            if (isTestFormat) {
+              // Test format: Move to inning 3 (Team 1 gets another chance)
+              const updateResult = await pool.query(
+                `UPDATE matches 
+                 SET inning2_complete = true, current_inning = 3, inning3_team_id = $1
+                 WHERE id = $2
+                 RETURNING *`,
+                [inning3TeamId, matchId]
+              );
+              
+              console.log(`[AllOut-Test] Inning 2 ended. Moving to Inning 3. Team ${inning3TeamId} will bat now.`);
+
+              if (io) {
+                io.to(`match_${matchId}`).emit("inningEnd", {
+                  matchId: String(matchId),
+                  inning: 2,
+                  message: `Inning 2 complete! Moving to Inning 3...`,
+                  nextInningTeam: inning3TeamId,
+                  nextInning: 3,
+                });
+              }
+              
+              return res.status(201).json({
+                completed: false,
+                inningEnded: true,
+                inning: 2,
+                match: updateResult.rows[0],
+              });
+            } else {
+              // Other formats: Complete match - team from inning 1 wins
+              const resultDescription = `${inning1TeamId === team1 ? 'Team 1' : 'Team 2'} won (inning 2 all out)`;
+
+              const updateResult = await pool.query(
+                `UPDATE matches 
+                 SET match_status = 'completed', winner = $1, result_description = $2, completed_at = NOW()
+                 WHERE id = $3
+                 RETURNING *`,
+                [inning1TeamId, resultDescription, matchId]
+              );
+
+              console.log(`[AllOut] Inning 2 All-Out! Match completed: ${resultDescription}`);
+
+              if (io) {
+                io.to(`match_${matchId}`).emit("matchComplete", {
+                  matchId: String(matchId),
+                  message: resultDescription,
+                  winner: inning1TeamId,
+                });
+              }
+              
+              return res.status(201).json({
+                completed: true,
+                match: updateResult.rows[0],
+                result: resultDescription,
+              });
+            }
+          } else if (currentInning === 3 && isTestFormat) {
+            // Update highest_score for all batsmen in inning 3
+            const battingTeamIdNum = parseInt(battingTeamId as any);
+            await updateHighestScoreForInning(parseInt(matchId), battingTeamIdNum, format, 3);
+            
+            // Inning 3 complete - move to inning 4
             const updateResult = await pool.query(
               `UPDATE matches 
-               SET match_status = 'completed', winner = $1, result_description = $2, completed_at = NOW()
-               WHERE id = $3
+               SET inning3_complete = true, current_inning = 4, inning4_team_id = $1
+               WHERE id = $2
                RETURNING *`,
-              [inning1TeamId, resultDescription, matchId]
+              [inning4TeamId, matchId]
             );
+            
+            console.log(`[AllOut-Test] Inning 3 ended. Moving to Inning 4. Team ${inning4TeamId} will bat now.`);
 
-            console.log(`[AllOut] Inning 2 All-Out! Match completed: ${resultDescription}`);
-
-            // Emit socket event using existing io
             if (io) {
-              io.to(`match_${matchId}`).emit("matchComplete", {
+              io.to(`match_${matchId}`).emit("inningEnd", {
                 matchId: String(matchId),
-                message: resultDescription,
-                winner: inning1TeamId,
+                inning: 3,
+                message: `Inning 3 complete! Moving to Inning 4...`,
+                nextInningTeam: inning4TeamId,
+                nextInning: 4,
               });
             }
             
-            // Return match object in same format as checkAndCompleteMatchIfNeeded for UI consistency
             return res.status(201).json({
-              completed: true,
+              completed: false,
+              inningEnded: true,
+              inning: 3,
               match: updateResult.rows[0],
-              result: resultDescription,
+            });
+          } else if (currentInning === 4 && isTestFormat) {
+            // Update highest_score for all batsmen in inning 4
+            const battingTeamIdNum = parseInt(battingTeamId as any);
+            await updateHighestScoreForInning(parseInt(matchId), battingTeamIdNum, format, 4);
+            
+            // Inning 4 complete - match will auto-complete via checkAndCompleteMatchIfNeeded
+            const updateResult = await pool.query(
+              `UPDATE matches 
+               SET inning4_complete = true
+               WHERE id = $1
+               RETURNING *`,
+              [matchId]
+            );
+            
+            console.log(`[AllOut-Test] Inning 4 ended. All innings complete. Match will be auto-completed based on final scores.`);
+
+            if (io) {
+              io.to(`match_${matchId}`).emit("inningEnd", {
+                matchId: String(matchId),
+                inning: 4,
+                message: `Inning 4 complete! All innings done. Calculating winner...`,
+                matchEnding: true,
+              });
+            }
+            
+            return res.status(201).json({
+              completed: false,
+              inningEnded: true,
+              inning: 4,
+              match: updateResult.rows[0],
             });
           }
         }
@@ -1062,10 +1371,10 @@ router.post("/:matchId/ball", verifyToken, isAdmin, async (req, res) => {
       }
     }
 
-    // Check if match should auto-complete (chasing team wins or all out in inning 2)
+    // Check if match should auto-complete 
     const completionCheck = await checkAndCompleteMatchIfNeeded(parseInt(matchId));
     if (completionCheck && completionCheck.completed) {
-      // Match was auto-completed, emit completion event was already done in helper
+      // Match was auto-completed
       return res.status(200).json(completionCheck);
     }
 
@@ -1120,9 +1429,18 @@ router.get("/:id/balls", async (req, res) => {
 router.get("/:id/scorecard", async (req, res) => {
   const { id } = req.params;
   try {
-    // Batting aggregates per batting team and batsman
+    // Get match format to determine inning structure
+    const matchFormatQuery = await pool.query(
+      `SELECT format FROM matches WHERE id = $1`,
+      [id]
+    );
+    const format = matchFormatQuery.rows[0]?.format || 'odi';
+    const isTestFormat = format === 'test';
+    
+    // Batting aggregates per batting team, inning, and batsman
     const battingQuery = `
       SELECT o.batting_team_id AS team_id,
+             o.inning_number,
              b.batsman_id,
              p.name AS batsman_name,
              SUM(b.runs) AS runs,
@@ -1133,13 +1451,14 @@ router.get("/:id/scorecard", async (req, res) => {
       JOIN overs o ON b.over_id = o.id
       LEFT JOIN players p ON b.batsman_id = p.id
       WHERE o.match_id = $1 AND b.batsman_id IS NOT NULL
-      GROUP BY o.batting_team_id, b.batsman_id, p.name
-      ORDER BY o.batting_team_id, SUM(b.runs) DESC;
+      GROUP BY o.batting_team_id, o.inning_number, b.batsman_id, p.name
+      ORDER BY o.batting_team_id, o.inning_number, SUM(b.runs) DESC;
     `;
 
-    // Dismissals: earliest wicket ball per dismissed batsman
+    // Dismissals: earliest wicket ball per dismissed batsman per inning
     const dismissalsQuery = `
       SELECT o.batting_team_id AS team_id,
+             o.inning_number,
              b.batsman_id,
              b.event,
              pw.name AS bowler_name,
@@ -1151,9 +1470,10 @@ router.get("/:id/scorecard", async (req, res) => {
       ORDER BY idx;
     `;
 
-    // Bowling aggregates (as bowler vs batting team)
+    // Bowling aggregates (as bowler vs batting team per inning)
     const bowlingQuery = `
       SELECT o.batting_team_id AS batting_team_id,
+             o.inning_number,
              b.bowler_id,
              p.name AS bowler_name,
              COUNT(*) FILTER (WHERE NOT ((COALESCE(b.extras,'0') ~* '^(wide|wd|no-?ball|nb)') OR (COALESCE(b.event,'') ~* '^(wide|wd|no-?ball|nb)'))) AS balls,
@@ -1163,13 +1483,14 @@ router.get("/:id/scorecard", async (req, res) => {
       JOIN overs o ON b.over_id = o.id
       LEFT JOIN players p ON b.bowler_id = p.id
       WHERE o.match_id = $1 AND b.bowler_id IS NOT NULL
-      GROUP BY o.batting_team_id, b.bowler_id, p.name
-      ORDER BY o.batting_team_id, SUM(CASE WHEN b.is_wicket THEN 1 ELSE 0 END) DESC;
+      GROUP BY o.batting_team_id, o.inning_number, b.bowler_id, p.name
+      ORDER BY o.batting_team_id, o.inning_number, SUM(CASE WHEN b.is_wicket THEN 1 ELSE 0 END) DESC;
     `;
 
-    // Extras and totals per batting team
+    // Extras and totals per batting team per inning
     const totalsQuery = `
       SELECT o.batting_team_id AS team_id,
+             o.inning_number,
              SUM(b.runs + COALESCE(CAST(b.extras AS INTEGER),0)) AS total_runs,
              SUM(COALESCE(CAST(b.extras AS INTEGER),0)) AS extras,
              SUM(CASE WHEN b.is_wicket THEN 1 ELSE 0 END) AS wickets,
@@ -1177,19 +1498,20 @@ router.get("/:id/scorecard", async (req, res) => {
       FROM balls b
       JOIN overs o ON b.over_id = o.id
       WHERE o.match_id = $1
-      GROUP BY o.batting_team_id
-      ORDER BY o.batting_team_id;
+      GROUP BY o.batting_team_id, o.inning_number
+      ORDER BY o.batting_team_id, o.inning_number;
     `;
 
-    // Determine striker (the batsman who faced the most recent ball) per batting team
+    // Determine striker per batting team per inning
     const strikerQuery = `
-      SELECT DISTINCT ON (o.batting_team_id)
+      SELECT DISTINCT ON (o.batting_team_id, o.inning_number)
         o.batting_team_id AS team_id,
+        o.inning_number,
         b.batsman_id AS striker_id
       FROM balls b
       JOIN overs o ON b.over_id = o.id
       WHERE o.match_id = $1 AND b.batsman_id IS NOT NULL
-      ORDER BY o.batting_team_id, b.id DESC
+      ORDER BY o.batting_team_id, o.inning_number, b.id DESC
     `;
 
     const [batRes, disRes, bowlRes, totalsRes, strikerRes] = await Promise.all([
@@ -1200,34 +1522,39 @@ router.get("/:id/scorecard", async (req, res) => {
       pool.query(strikerQuery, [id]),
     ]);
 
-    const strikerMap: Record<number, number> = {};
+    // Map striker by team_id + inning_number
+    const strikerMap: Record<string, number> = {};
     for (const r of strikerRes.rows) {
-      strikerMap[r.team_id] = r.striker_id;
+      const key = `${r.team_id}_${r.inning_number}`;
+      strikerMap[key] = r.striker_id;
     }
 
-    // Map dismissals by team_id + batsman_id to the earliest dismissal
+    // Map dismissals by team_id + inning_number + batsman_id to the earliest dismissal
     const dismissalMap: Record<string, any> = {};
     for (const r of disRes.rows) {
-      const key = `${r.team_id}_${r.batsman_id}`;
+      const key = `${r.team_id}_${r.inning_number}_${r.batsman_id}`;
       if (!dismissalMap[key])
         dismissalMap[key] = { event: r.event, bowlerName: r.bowler_name };
     }
 
-    // Group batting rows per team
-    const teams: Record<number, any> = {};
+    // Group batting rows per inning 
+    const innings: Record<number, any> = {};
     for (const r of batRes.rows) {
       const teamId = r.team_id;
-      if (!teams[teamId])
-        teams[teamId] = { batting: [], bowling: [], totals: null };
-      const key = `${teamId}_${r.batsman_id}`;
-      const dismiss = dismissalMap[key];
+      const inningNum = r.inning_number;
+      if (!innings[inningNum])
+        innings[inningNum] = { teamId, batting: [], bowling: [], totals: null };
+      
+      const strikerKey = `${teamId}_${inningNum}`;
+      const dismissKey = `${teamId}_${inningNum}_${r.batsman_id}`;
+      const dismiss = dismissalMap[dismissKey];
       const notOut = !dismiss;
       const dismissalText = dismiss
         ? dismiss.event
           ? String(dismiss.event)
           : `b ${dismiss.bowlerName || "Unknown"}`
         : "not out";
-      teams[teamId].batting.push({
+      innings[inningNum].batting.push({
         playerId: r.batsman_id,
         playerName: r.batsman_name,
         runs: parseInt(r.runs) || 0,
@@ -1236,16 +1563,16 @@ router.get("/:id/scorecard", async (req, res) => {
         sixes: parseInt(r.sixes) || 0,
         dismissal: dismissalText,
         notOut,
-        isStriker: strikerMap[teamId] === r.batsman_id,
+        isStriker: strikerMap[strikerKey] === r.batsman_id,
       });
     }
 
-    // Attach bowling lists (note: bowling rows are grouped by batting_team_id — bowlers who bowled to that batting team)
+    // Attach bowling lists per inning
     for (const r of bowlRes.rows) {
-      const teamId = r.batting_team_id;
-      if (!teams[teamId])
-        teams[teamId] = { batting: [], bowling: [], totals: null };
-      teams[teamId].bowling.push({
+      const inningNum = r.inning_number;
+      if (!innings[inningNum])
+        innings[inningNum] = { teamId: r.batting_team_id, batting: [], bowling: [], totals: null };
+      innings[inningNum].bowling.push({
         playerId: r.bowler_id,
         playerName: r.bowler_name,
         balls: parseInt(r.balls) || 0,
@@ -1254,12 +1581,12 @@ router.get("/:id/scorecard", async (req, res) => {
       });
     }
 
-    // Attach totals
+    // Attach totals per inning
     for (const r of totalsRes.rows) {
-      const teamId = r.team_id;
-      if (!teams[teamId])
-        teams[teamId] = { batting: [], bowling: [], totals: null };
-      teams[teamId].totals = {
+      const inningNum = r.inning_number;
+      if (!innings[inningNum])
+        innings[inningNum] = { teamId: r.team_id, batting: [], bowling: [], totals: null };
+      innings[inningNum].totals = {
         totalRuns: parseInt(r.total_runs) || 0,
         extras: parseInt(r.extras) || 0,
         wickets: parseInt(r.wickets) || 0,
@@ -1267,7 +1594,7 @@ router.get("/:id/scorecard", async (req, res) => {
       };
     }
 
-    res.json({ matchId: Number(id), teams });
+    res.json({ matchId: Number(id), format, innings });
   } catch (err) {
     console.error("Error fetching scorecard:", err);
     res.status(500).send("Server Error");
@@ -1371,7 +1698,7 @@ router.get("/:id/insights", async (req, res) => {
   }
 });
 
-// Get player stats for all players in a match (grouped by team)
+// Get player stats for all players in a match
 router.get("/:id/player-stats", async (req, res) => {
   const { id } = req.params;
   try {

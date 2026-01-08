@@ -43,7 +43,7 @@ router.get('/matches/:matchId/players/:playerId/description', async (req, res) =
 	}
 });
 
-// Create or update a player description (upsert) - Admin only
+// Create or update a player description - Admin only
 router.post('/matches/:matchId/players/:playerId/description', verifyToken, isAdmin, async (req, res) => {
 	const { matchId, playerId } = req.params;
 	const { description, author } = req.body;
