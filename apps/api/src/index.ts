@@ -35,7 +35,7 @@ app.get('/', (req, res) => {
     res.send('Hello from the API!');
 });
 
-// Start the HTTP server (so socket.io is attached to the same server)
+// Start the HTTP server
 server.listen(PORT, () => {
   console.log(`API is running on http://localhost:${PORT}`);
 });

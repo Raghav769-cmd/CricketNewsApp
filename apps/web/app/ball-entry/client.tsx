@@ -196,7 +196,7 @@ export default function BallEntry({
   const draftTimerRef = useRef<NodeJS.Timeout | null>(null);
   const draftRestoreCheckedRef = useRef<Set<number>>(new Set());
 
-  // Restore draft when selectedMatch changes (prompt user with dialog)
+  // Restore draft when selectedMatch changes
   useEffect(() => {
     if (!selectedMatch || selectedMatch === 0) return;
     
@@ -223,7 +223,7 @@ export default function BallEntry({
             // Restore form fields in the correct order with a small delay to ensure state updates propagate
             if (typeof parsed.battingTeamId === "number") setValue("battingTeamId", parsed.battingTeamId);
             
-            // Batsmen must be set after batting team is set (or can be set together)
+            // Batsmen must be set after batting team is set
             if (typeof parsed.strikerId === "number") setValue("strikerId", parsed.strikerId, { shouldDirty: true });
             if (typeof parsed.nonStrikerId === "number") setValue("nonStrikerId", parsed.nonStrikerId, { shouldDirty: true });
             
@@ -271,10 +271,9 @@ export default function BallEntry({
     } catch (e) {
       console.warn("[Draft] restore check failed", e);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedMatch]);
 
-  // Autosave draft on form changes (debounced by 1000ms)
+  // Autosave draft on form changes
   useEffect(() => {
     if (!selectedMatch || selectedMatch === 0) return;
 
@@ -312,14 +311,14 @@ export default function BallEntry({
   // Intercept reload and show custom dialog
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Ctrl+R or Cmd+R to reload
+      
       if ((e.ctrlKey || e.metaKey) && e.key === 'r') {
         if (selectedMatch && selectedMatch > 0 && !allowReloadRef.current) {
           e.preventDefault();
           showReloadDialog();
         }
       }
-      // F5 to reload
+      
       if (e.key === 'F5') {
         if (selectedMatch && selectedMatch > 0 && !allowReloadRef.current) {
           e.preventDefault();
@@ -349,13 +348,11 @@ export default function BallEntry({
     };
 
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      // If user confirmed reload, allow it
       if (allowReloadRef.current) {
         return;
       }
 
       if (selectedMatch && selectedMatch > 0) {
-        // For browser reload button and other reload methods, prevent default
         e.preventDefault();
         e.returnValue = "";
       }
@@ -369,7 +366,6 @@ export default function BallEntry({
       window.removeEventListener("beforeunload", handleBeforeUnload);
     };
   }, [selectedMatch]);
-  // --- end draft persistence ---
 
   const getMaxOversForFormat = (format: string | undefined): number => {
     if (!format) return 4; 
@@ -453,7 +449,6 @@ export default function BallEntry({
     }
   };
 
-  // Optional: Refresh data on manual trigger (for updates during session)
   const refreshData = async () => {
     try {
       const [matchesResp, playersResp, teamsResp] = await Promise.all([
@@ -585,7 +580,7 @@ export default function BallEntry({
     };
   }, [selectedMatchDetails?.inning1_complete, selectedMatchDetails?.id, isPolling]);
 
-  // Cleanup polling on component unmount
+  // Cleanup polling 
   useEffect(() => {
     return () => {
       stopPolling();
@@ -824,7 +819,7 @@ export default function BallEntry({
           
           // Handle inning end all-out
           if (result.inningEnded) {
-            console.log("[UI] Inning ended:", result);          // Update match details
+            console.log("[UI] Inning ended:", result);  
           if (result.match) {
             const normalizedMatch: Match = {
               ...result.match,
@@ -885,7 +880,7 @@ export default function BallEntry({
           return;
         }
         
-        // Handle match completion (all-out in inning 2)
+        // Handle match completion
         if (result.completed && result.match?.match_status === 'completed') {
           console.log("[UI] Match completed:", result);
           
@@ -992,7 +987,6 @@ export default function BallEntry({
         setValue("extraType", "none");
         
         // Clear striker ID if wicket was marked - but NOT if it's the last ball of the over
-        // (because the non-striker already moved to striker position)
         if (data.wicket && ballToSend2 !== 6) {
           setValue("strikerId", 0);
           console.log("[UI] Wicket marked - striker ID cleared");

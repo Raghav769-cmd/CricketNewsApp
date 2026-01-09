@@ -1,5 +1,4 @@
 // Simple emitter script to test socket.io server
-// Usage: node emitUpdate.js [MATCH_ID]
 
 const { io } = require('socket.io-client');
 

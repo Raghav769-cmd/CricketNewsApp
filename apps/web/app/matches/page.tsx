@@ -204,7 +204,7 @@ export default function Matches() {
     const displayOver = Math.max(0, o - 1);
     const displayBall = Math.max(0, b - 1);
 
-    // Handle ball rollover (if ball is 6, it means over completed)
+    // Handle ball rollover 
     if (displayBall >= 6) {
       return `${displayOver + 1}.${displayBall % 6}`;
     }

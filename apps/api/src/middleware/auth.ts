@@ -1,7 +1,6 @@
 import { type Request, type Response, type NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 
-// Extend Express Request to include user info
 declare global {
   namespace Express {
     interface Request {
@@ -16,9 +15,6 @@ declare global {
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-this-in-production';
 
-/**
- * Middleware to verify JWT token
- */
 export const verifyToken = (req: Request, res: Response, next: NextFunction) => {
   try {
     const token = req.headers.authorization?.split(' ')[1];
@@ -41,9 +37,6 @@ export const verifyToken = (req: Request, res: Response, next: NextFunction) => 
   }
 };
 
-/**
- * Middleware to check if user is superadmin
- */
 export const isSuperadmin = (req: Request, res: Response, next: NextFunction) => {
   if (!req.user) {
     return res.status(401).json({ error: 'Unauthorized' });
@@ -56,9 +49,6 @@ export const isSuperadmin = (req: Request, res: Response, next: NextFunction) =>
   next();
 };
 
-/**
- * Middleware to check if user is admin or superadmin
- */
 export const isAdmin = (req: Request, res: Response, next: NextFunction) => {
   if (!req.user) {
     return res.status(401).json({ error: 'Unauthorized' });
@@ -71,9 +61,6 @@ export const isAdmin = (req: Request, res: Response, next: NextFunction) => {
   next();
 };
 
-/**
- * Middleware to check if user is authenticated
- */
 export const isAuthenticated = (req: Request, res: Response, next: NextFunction) => {
   if (!req.user) {
     return res.status(401).json({ error: 'Unauthorized' });
@@ -82,9 +69,6 @@ export const isAuthenticated = (req: Request, res: Response, next: NextFunction)
   next();
 };
 
-/**
- * Middleware to check if user is admin or the resource owner
- */
 export const isAdminOrOwner = (req: Request, res: Response, next: NextFunction) => {
   if (!req.user) {
     return res.status(401).json({ error: 'Unauthorized' });
@@ -97,9 +81,6 @@ export const isAdminOrOwner = (req: Request, res: Response, next: NextFunction) 
   return res.status(403).json({ error: 'Insufficient permissions' });
 };
 
-/**
- * Generate JWT token
- */
 export const generateToken = (userId: number, email: string, role: 'superadmin' | 'admin' | 'user'): string => {
   return jwt.sign(
     { id: userId, email, role },

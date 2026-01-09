@@ -6,7 +6,7 @@ let ioInstance: Server | null = null;
 export const setupSocket = (httpServer: HttpServer): Server => {
   const io = new Server(httpServer, {
     cors: {
-      origin: '*', // Allow all origins (update this in production)
+      origin: '*',
       methods: ['GET', 'POST'],
     },
   });

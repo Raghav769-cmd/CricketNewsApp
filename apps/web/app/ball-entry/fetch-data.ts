@@ -1,6 +1,3 @@
-// Server-side data fetching for SSR
-// This file contains helper functions for fetching initial data on the server
-
 interface Player {
   id: number;
   name: string;
@@ -37,10 +34,6 @@ interface Match {
 
 const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
-/**
- * Fetch all matches from the API
- * This is called on the server during SSR
- */
 export async function getMatches(): Promise<Match[]> {
   try {
     const response = await fetch(`${apiBase}/api/matches`, {
@@ -79,10 +72,6 @@ export async function getMatches(): Promise<Match[]> {
   }
 }
 
-/**
- * Fetch all players from the API
- * This is called on the server during SSR
- */
 export async function getPlayers(): Promise<Player[]> {
   try {
     const response = await fetch(`${apiBase}/api/players`, {
@@ -112,10 +101,6 @@ export async function getPlayers(): Promise<Player[]> {
   }
 }
 
-/**
- * Fetch all teams from the API
- * This is called on the server during SSR
- */
 export async function getTeams(): Promise<Team[]> {
   try {
     const response = await fetch(`${apiBase}/api/teams`, {
@@ -144,10 +129,6 @@ export async function getTeams(): Promise<Team[]> {
   }
 }
 
-/**
- * Fetch a single match by ID
- * Used for polling updates from the client
- */
 export async function getMatchById(matchId: number): Promise<Match | null> {
   try {
     const response = await fetch(`${apiBase}/api/matches/${matchId}`, {

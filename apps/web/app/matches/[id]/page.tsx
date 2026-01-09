@@ -381,48 +381,87 @@ export default function MatchDetailPage() {
                           </div>
 
                           {/* Batting Table */}
-                          <div className="bg-slate-900 rounded-lg overflow-hidden border border-slate-700">
-                            <div className="overflow-x-auto">
-                              <table className="w-full text-xs sm:text-sm">
-                                <thead className="bg-slate-800">
-                                  <tr className="text-left font-semibold text-lime-400 uppercase">
-                                    <th className="px-2 sm:px-4 py-2 sm:py-3">Batsman</th>
-                                    <th className="px-2 sm:px-4 py-2 sm:py-3 hidden sm:table-cell">Dismissal</th>
-                                    <th className="px-1.5 sm:px-4 py-2 sm:py-3 text-center">R</th>
-                                    <th className="px-1.5 sm:px-4 py-2 sm:py-3 text-center">B</th>
-                                    <th className="px-1.5 sm:px-4 py-2 sm:py-3 text-center">4s</th>
-                                    <th className="px-1.5 sm:px-4 py-2 sm:py-3 text-center">6s</th>
-                                    <th className="px-1.5 sm:px-4 py-2 sm:py-3 text-center">SR</th>
-                                  </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-700">
-                                  {t.batting.map((b: any) => {
-                                    const nameClass = b.isStriker ? 'text-cyan-400 font-bold' : 
-                                      (b.notOut && !b.isStriker ? 'text-amber-400 font-semibold' : 'text-gray-300');
-                                    return (
-                                      <tr key={b.playerId} className="hover:bg-slate-800/50 transition-colors border-b border-slate-700">
-                                        <td className="px-2 sm:px-4 py-2 sm:py-3">
-                                          <div className="flex items-center gap-1">
-                                            <span className={`${nameClass} truncate`}>{b.playerName}</span>
-                                            {b.isStriker && <span className="w-1.5 h-1.5 bg-cyan-400 rounded-full animate-pulse shrink-0"></span>}
-                                            {b.notOut && !b.isStriker && <span className="text-xs text-amber-400 shrink-0">*</span>}
-                                          </div>
-                                        </td>
-                                        <td className="px-2 sm:px-4 py-2 sm:py-3 text-gray-400 hidden sm:table-cell truncate">{b.dismissal}</td>
-                                        <td className="px-1.5 sm:px-4 py-2 sm:py-3 text-center font-bold text-white">{b.runs}</td>
-                                        <td className="px-1.5 sm:px-4 py-2 sm:py-3 text-center text-gray-400">{b.balls}</td>
-                                        <td className="px-1.5 sm:px-4 py-2 sm:py-3 text-center text-gray-400">{b.fours}</td>
-                                        <td className="px-1.5 sm:px-4 py-2 sm:py-3 text-center text-gray-400">{b.sixes}</td>
-                                        <td className="px-1.5 sm:px-4 py-2 sm:py-3 text-center text-gray-400">
-                                          {b.balls > 0 ? ((b.runs / b.balls) * 100).toFixed(1) : '0.0'}
-                                        </td>
-                                      </tr>
-                                    );
-                                  })}
-                                </tbody>
-                              </table>
+                          <div className="mb-4 sm:mb-6">
+                            <h4 className="text-sm sm:text-base font-semibold text-lime-300 mb-3">Batting</h4>
+                            <div className="bg-slate-900 rounded-lg overflow-hidden border border-slate-700">
+                              <div className="overflow-x-auto">
+                                <table className="w-full text-xs sm:text-sm">
+                                  <thead className="bg-slate-800">
+                                    <tr className="text-left font-semibold text-lime-400 uppercase">
+                                      <th className="px-2 sm:px-4 py-2 sm:py-3">Batsman</th>
+                                      <th className="px-2 sm:px-4 py-2 sm:py-3 hidden sm:table-cell">Dismissal</th>
+                                      <th className="px-1.5 sm:px-4 py-2 sm:py-3 text-center">R</th>
+                                      <th className="px-1.5 sm:px-4 py-2 sm:py-3 text-center">B</th>
+                                      <th className="px-1.5 sm:px-4 py-2 sm:py-3 text-center">4s</th>
+                                      <th className="px-1.5 sm:px-4 py-2 sm:py-3 text-center">6s</th>
+                                      <th className="px-1.5 sm:px-4 py-2 sm:py-3 text-center">SR</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-slate-700">
+                                    {t.batting.map((b: any) => {
+                                      const nameClass = b.isStriker ? 'text-cyan-400 font-bold' : 
+                                        (b.notOut && !b.isStriker ? 'text-amber-400 font-semibold' : 'text-gray-300');
+                                      return (
+                                        <tr key={b.playerId} className="hover:bg-slate-800/50 transition-colors border-b border-slate-700">
+                                          <td className="px-2 sm:px-4 py-2 sm:py-3">
+                                            <div className="flex items-center gap-1">
+                                              <span className={`${nameClass} truncate`}>{b.playerName}</span>
+                                              {b.isStriker && <span className="w-1.5 h-1.5 bg-cyan-400 rounded-full animate-pulse shrink-0"></span>}
+                                              {b.notOut && !b.isStriker && <span className="text-xs text-amber-400 shrink-0">*</span>}
+                                            </div>
+                                          </td>
+                                          <td className="px-2 sm:px-4 py-2 sm:py-3 text-gray-400 hidden sm:table-cell truncate">{b.dismissal}</td>
+                                          <td className="px-1.5 sm:px-4 py-2 sm:py-3 text-center font-bold text-white">{b.runs}</td>
+                                          <td className="px-1.5 sm:px-4 py-2 sm:py-3 text-center text-gray-400">{b.balls}</td>
+                                          <td className="px-1.5 sm:px-4 py-2 sm:py-3 text-center text-gray-400">{b.fours}</td>
+                                          <td className="px-1.5 sm:px-4 py-2 sm:py-3 text-center text-gray-400">{b.sixes}</td>
+                                          <td className="px-1.5 sm:px-4 py-2 sm:py-3 text-center text-gray-400">
+                                            {b.balls > 0 ? ((b.runs / b.balls) * 100).toFixed(1) : '0.0'}
+                                          </td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                </table>
+                              </div>
                             </div>
                           </div>
+
+                          {/* Bowling Table */}
+                          {t.bowling && t.bowling.length > 0 && (
+                            <div className="mb-4 sm:mb-6">
+                              <h4 className="text-sm sm:text-base font-semibold text-lime-300 mb-3">Bowling</h4>
+                              <div className="bg-slate-900 rounded-lg overflow-hidden border border-slate-700">
+                                <div className="overflow-x-auto">
+                                  <table className="w-full text-xs sm:text-sm">
+                                    <thead className="bg-slate-800">
+                                      <tr className="text-left font-semibold text-lime-400 uppercase">
+                                        <th className="px-2 sm:px-4 py-2 sm:py-3">Bowler</th>
+                                        <th className="px-1.5 sm:px-4 py-2 sm:py-3 text-center">B</th>
+                                        <th className="px-1.5 sm:px-4 py-2 sm:py-3 text-center">R</th>
+                                        <th className="px-1.5 sm:px-4 py-2 sm:py-3 text-center">W</th>
+                                        <th className="px-1.5 sm:px-4 py-2 sm:py-3 text-center">ER</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-700">
+                                      {t.bowling.map((bw: any) => {
+                                        const economyRate = bw.balls > 0 ? (bw.runsConceded / (bw.balls / 6)).toFixed(2) : '0.00';
+                                        return (
+                                          <tr key={bw.playerId} className="hover:bg-slate-800/50 transition-colors border-b border-slate-700">
+                                            <td className="px-2 sm:px-4 py-2 sm:py-3 text-gray-300 truncate">{bw.playerName}</td>
+                                            <td className="px-1.5 sm:px-4 py-2 sm:py-3 text-center text-gray-400">{bw.balls}</td>
+                                            <td className="px-1.5 sm:px-4 py-2 sm:py-3 text-center font-bold text-white">{bw.runsConceded}</td>
+                                            <td className="px-1.5 sm:px-4 py-2 sm:py-3 text-center text-orange-400 font-semibold">{bw.wickets}</td>
+                                            <td className="px-1.5 sm:px-4 py-2 sm:py-3 text-center text-gray-400">{economyRate}</td>
+                                          </tr>
+                                        );
+                                      })}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       );
                     })}

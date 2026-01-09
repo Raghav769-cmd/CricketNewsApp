@@ -1086,7 +1086,7 @@ router.post("/:matchId/ball", verifyToken, isAdmin, async (req, res) => {
       }
     }
 
-    // Update player stats for bowler (non-blocking)
+    // Update player stats for bowler 
     if (bowlerId) {
       try {
         const matchFormatResult = await pool.query(
@@ -1115,26 +1115,33 @@ router.post("/:matchId/ball", verifyToken, isAdmin, async (req, res) => {
             oversToAdd = 0.1;
           }
 
-          // Check if this over is a maiden 
-          const overRunsCheck = await pool.query(
-            `SELECT SUM(COALESCE(CAST(b.extras AS INTEGER), 0)) as extra_runs,
-                    SUM(b.runs) as ball_runs
-             FROM balls b
-             JOIN overs o ON b.over_id = o.id
-             WHERE o.match_id = $1 AND b.bowler_id = $2 AND o.over_number = $3 AND b.id != $4`,
-            [matchId, bowlerId, overNumber, currentBallId]
-          );
-          
-          const extraRuns = parseInt(overRunsCheck.rows[0]?.extra_runs) || 0;
-          const ballRuns = parseInt(overRunsCheck.rows[0]?.ball_runs) || 0;
-          const otherRuns = extraRuns + ballRuns;
-          
-          // Check if this is the 6th ball (last ball of the over)
-          const isMaidenOver = ballInOver === 6 && runsGiven === 0 && otherRuns === 0 && !isWicket;
+          // Check if this over is a maiden
+          let isMaidenOver = false;
+          if (ballInOver === 6) {
+            // This is the last ball of the over, check total runs in this over
+            const overTotalRunsCheck = await pool.query(
+              `SELECT SUM(COALESCE(CAST(b.extras AS INTEGER), 0)) as extra_runs,
+                      SUM(b.runs) as ball_runs
+               FROM balls b
+               JOIN overs o ON b.over_id = o.id
+               WHERE o.match_id = $1 AND o.over_number = $2 AND b.bowler_id = $3`,
+              [matchId, overNumber, bowlerId]
+            );
+            
+            const totalExtraRuns = parseInt(overTotalRunsCheck.rows[0]?.extra_runs) || 0;
+            const totalBallRuns = parseInt(overTotalRunsCheck.rows[0]?.ball_runs) || 0;
+            const totalRunsInOver = totalExtraRuns + totalBallRuns;
+            
+            // Maiden over: 6 balls bowled with 0 runs conceded
+            isMaidenOver = totalRunsInOver === 0;
+            console.log(`[Maiden-DEBUG] Over ${overNumber}: Total Runs = ${totalRunsInOver}, isMaiden = ${isMaidenOver}`);
+          }
 
           console.log(`[Stats-DEBUG] Ball ${ballNumber} in over ${overNumber}: ballInOver=${ballInOver}, oversToAdd=+${oversToAdd.toFixed(1)}`);
           console.log(`[Stats] Updating bowler ${bowlerId}: +${runsGiven} runs, +${wicketCount} wickets, +${oversToAdd.toFixed(1)} overs (Team ${bowlingTeamId}, Format ${format}), maiden=${isMaidenOver}`);
 
+          // Only update maiden count if this is the 6th ball of the over
+          const maidenIncrement = (ballInOver === 6 && isMaidenOver) ? 1 : 0;
           
           const bowlerResult = await pool.query(
             `INSERT INTO player_stats (player_id, team_id, format, runs_conceded, overs_bowled, wickets_taken, maidens, matches_played)
@@ -1145,7 +1152,7 @@ router.post("/:matchId/ball", verifyToken, isAdmin, async (req, res) => {
              wickets_taken = player_stats.wickets_taken + $6,
              maidens = player_stats.maidens + $7,
              updated_at = NOW()`,
-            [bowlerId, bowlingTeamId, format, runsGiven, oversToAdd, wicketCount, isMaidenOver ? 1 : 0]
+            [bowlerId, bowlingTeamId, format, runsGiven, oversToAdd, wicketCount, maidenIncrement]
           );
 
           console.log(`[Stats] Bowler ${bowlerId} updated, affected rows:`, bowlerResult.rowCount);
@@ -1338,7 +1345,16 @@ router.post("/:matchId/ball", verifyToken, isAdmin, async (req, res) => {
             const battingTeamIdNum = parseInt(battingTeamId as any);
             await updateHighestScoreForInning(parseInt(matchId), battingTeamIdNum, format, 4);
             
-            // Inning 4 complete - match will auto-complete via checkAndCompleteMatchIfNeeded
+            // Inning 4 complete - immediately complete match, don't wait for checkAndCompleteMatchIfNeeded
+            // This ensures match doesn't continue to "inning 5"
+            const completionResult = await checkAndCompleteMatchIfNeeded(parseInt(matchId));
+            
+            if (completionResult && completionResult.completed) {
+              console.log(`[AllOut-Test] Inning 4 ended (all out). Match completed.`);
+              return res.status(200).json(completionResult);
+            }
+            
+            // Fallback: If completion didn't work, at least mark inning4_complete
             const updateResult = await pool.query(
               `UPDATE matches 
                SET inning4_complete = true
@@ -1805,8 +1821,5 @@ router.get("/:id/player-stats", async (req, res) => {
     res.status(500).send("Server Error");
   }
 });
-
-
-
 
 export default router;
