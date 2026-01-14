@@ -1,31 +1,31 @@
 import { Router } from 'express';
-import pool from '../db/connection.js';
+import { prisma } from '../db/connection.js';
 
 const router: Router = Router();
 
 // get all teams
 router.get('/', async (req, res) => {
-    try {
-        const result = await pool.query('SELECT * FROM teams');
-        res.json(result.rows);
-    } catch (err) {
-        console.error(err);
-        res.status(500).send('Server Error');
-    }
+  try {
+    const result = await prisma.$queryRaw<any[]>`SELECT * FROM teams`;
+    res.json(result);
+  } catch (err) {
+    console.error('Error fetching teams:', err);
+    res.status(500).json({ error: 'Failed to fetch teams' });
+  }
 });
 
 // get team by id
 router.get('/:id', async (req, res) => {
   const { id } = req.params;
   try {
-    const result = await pool.query('SELECT * FROM teams WHERE id = $1', [id]);
-    if (result.rows.length === 0) {
-      return res.status(404).send('Team not found');
+    const result = await prisma.$queryRaw<any[]>`SELECT * FROM teams WHERE id = ${parseInt(id)}`;
+    if (result.length === 0) {
+      return res.status(404).json({ error: 'Team not found' });
     }
-    res.json(result.rows[0]);
+    res.json(result[0]);
   } catch (err) {
-    console.error(err);
-    res.status(500).send('Server Error');
+    console.error('Error fetching team:', err);
+    res.status(500).json({ error: 'Failed to fetch team' });
   }
 });
 
@@ -34,17 +34,19 @@ router.put('/:id', async (req, res) => {
   const { id } = req.params;
   const { name } = req.body;
   try {
-    const result = await pool.query(
-      'UPDATE teams SET name = $1 WHERE id = $2 RETURNING *',
-      [name, id]
-    );
-    if (result.rows.length === 0) {
-      return res.status(404).send('Team not found');
+    if (!name) {
+      return res.status(400).json({ error: 'Team name is required' });
     }
-    res.json(result.rows[0]);
+    const result = await prisma.$queryRaw<any[]>`
+      UPDATE teams SET name = ${name} WHERE id = ${parseInt(id)} RETURNING *
+    `;
+    if (result.length === 0) {
+      return res.status(404).json({ error: 'Team not found' });
+    }
+    res.json(result[0]);
   } catch (err) {
-    console.error(err);
-    res.status(500).send('Server Error');
+    console.error('Error updating team:', err);
+    res.status(500).json({ error: 'Failed to update team' });
   }
 });
 
@@ -52,14 +54,16 @@ router.put('/:id', async (req, res) => {
 router.delete('/:id', async (req, res) => {
   const { id } = req.params;
   try {
-    const result = await pool.query('DELETE FROM teams WHERE id = $1 RETURNING *', [id]);
-    if (result.rows.length === 0) {
-      return res.status(404).send('Team not found');
+    const result = await prisma.$queryRaw<any[]>`
+      DELETE FROM teams WHERE id = ${parseInt(id)} RETURNING *
+    `;
+    if (result.length === 0) {
+      return res.status(404).json({ error: 'Team not found' });
     }
-    res.json({ message: 'Team deleted successfully' });
+    res.json({ message: 'Team deleted successfully', team: result[0] });
   } catch (err) {
-    console.error(err);
-    res.status(500).send('Server Error');
+    console.error('Error deleting team:', err);
+    res.status(500).json({ error: 'Failed to delete team' });
   }
 });
 

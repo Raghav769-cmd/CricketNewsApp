@@ -16,10 +16,31 @@ const server = http.createServer(app);
 setupSocket(server);
 const PORT = process.env.PORT || 5000;
 
+// Custom JSON serializer to handle BigInt
+const jsonStringify = (obj: any): string => {
+  return JSON.stringify(obj, (key, value) => {
+    if (typeof value === 'bigint') {
+      return value.toString();
+    }
+    return value;
+  });
+};
+
 app.use(express.json());
 app.use(cors({
   origin: 'http://localhost:3000',
 }));
+
+// Override res.json to use custom serializer
+app.use((req, res, next) => {
+  const originalJson = res.json;
+  res.json = function(obj) {
+    this.set('Content-Type', 'application/json');
+    this.send(jsonStringify(obj));
+    return this;
+  };
+  next();
+});
 
 app.use('/api/auth', authRouter);
 app.use('/api/matches', matchesRouter);

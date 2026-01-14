@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import pool from '../db/connection.js';
+import { prisma } from '../db/connection.js';
 import { verifyToken, isAdmin } from '../middleware/auth.ts';
 
 const router: Router = Router();
@@ -8,21 +8,22 @@ const router: Router = Router();
 router.get('/matches/:matchId/descriptions', async (req, res) => {
 	const { matchId } = req.params;
 	const mId = Number(matchId);
-	if (!Number.isInteger(mId)) return res.status(400).send('Invalid match id');
+	if (!Number.isInteger(mId)) {
+		return res.status(400).json({ error: 'Invalid match ID' });
+	}
 	try {
-		const q = `
+		const result = await prisma.$queryRaw<any[]>`
 			SELECT pd.id, pd.match_id, pd.player_id, pd.description, pd.author, pd.created_at, pd.updated_at,
 						 p.name as player_name
 			FROM player_descriptions pd
 			LEFT JOIN players p ON p.id = pd.player_id
-			WHERE pd.match_id = $1
+			WHERE pd.match_id = ${mId}
 			ORDER BY p.name NULLS LAST, pd.updated_at DESC
 		`;
-		const result = await pool.query(q, [mId]);
-		res.json(result.rows);
+		res.json(result);
 	} catch (err) {
 		console.error('Error fetching player descriptions:', err);
-		res.status(500).send('Server Error');
+		res.status(500).json({ error: 'Failed to fetch player descriptions' });
 	}
 });
 
@@ -31,15 +32,20 @@ router.get('/matches/:matchId/players/:playerId/description', async (req, res) =
 	const { matchId, playerId } = req.params;
 	const mId = Number(matchId);
 	const pId = Number(playerId);
-	if (!Number.isInteger(mId) || !Number.isInteger(pId)) return res.status(400).send('Invalid match or player id');
+	if (!Number.isInteger(mId) || !Number.isInteger(pId)) {
+		return res.status(400).json({ error: 'Invalid match or player ID' });
+	}
 	try {
-		const q = `SELECT * FROM player_descriptions WHERE match_id = $1 AND player_id = $2 LIMIT 1`;
-		const result = await pool.query(q, [mId, pId]);
-		if (result.rows.length === 0) return res.status(404).send('Not found');
-		res.json(result.rows[0]);
+		const result = await prisma.$queryRaw<any[]>`
+			SELECT * FROM player_descriptions WHERE match_id = ${mId} AND player_id = ${pId} LIMIT 1
+		`;
+		if (result.length === 0) {
+			return res.status(404).json({ error: 'Description not found' });
+		}
+		res.json(result[0]);
 	} catch (err) {
 		console.error('Error fetching description:', err);
-		res.status(500).send('Server Error');
+		res.status(500).json({ error: 'Failed to fetch description' });
 	}
 });
 
@@ -47,25 +53,31 @@ router.get('/matches/:matchId/players/:playerId/description', async (req, res) =
 router.post('/matches/:matchId/players/:playerId/description', verifyToken, isAdmin, async (req, res) => {
 	const { matchId, playerId } = req.params;
 	const { description, author } = req.body;
-	if (!description || String(description).trim().length === 0) return res.status(400).send('Description is required');
+	
+	if (!description || String(description).trim().length === 0) {
+		return res.status(400).json({ error: 'Description is required' });
+	}
+	
 	const mId = Number(matchId);
 	const pId = Number(playerId);
-	if (!Number.isInteger(mId) || !Number.isInteger(pId)) return res.status(400).send('Invalid match or player id');
+	if (!Number.isInteger(mId) || !Number.isInteger(pId)) {
+		return res.status(400).json({ error: 'Invalid match or player ID' });
+	}
+	
 	try {
-		const q = `
+		const result = await prisma.$queryRaw<any[]>`
 			INSERT INTO player_descriptions (match_id, player_id, description, author)
-			VALUES ($1, $2, $3, $4)
+			VALUES (${mId}, ${pId}, ${description}, ${author || null})
 			ON CONFLICT (match_id, player_id) DO UPDATE
 				SET description = EXCLUDED.description,
 						author = EXCLUDED.author,
 						updated_at = now()
 			RETURNING *
 		`;
-		const result = await pool.query(q, [mId, pId, description, author || null]);
-		res.status(201).json(result.rows[0]);
+		res.status(201).json(result[0]);
 	} catch (err) {
 		console.error('Error saving description:', err);
-		res.status(500).send('Server Error');
+		res.status(500).json({ error: 'Failed to save description' });
 	}
 });
 

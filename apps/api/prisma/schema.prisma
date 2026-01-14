@@ -1,231 +1,191 @@
 generator client {
   provider = "prisma-client"
-  output   = "../src/generated/prisma"
+  output   = "../generated/prisma"
 }
 
 datasource db {
   provider = "postgresql"
 }
 
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-model admin_requests {
-  id                   Int       @id @default(autoincrement())
-  email                String    @unique @db.VarChar(255)
-  password             String    @db.VarChar(255)
-  name                 String?   @db.VarChar(255)
-  status               String?   @default("pending") @db.VarChar(50)
-  requested_by_email   String?   @db.VarChar(255)
-  approved_by_admin_id Int?
-  approved_at          DateTime? @db.Timestamp(6)
-  rejection_reason     String?
-  created_at           DateTime? @default(now()) @db.Timestamp(6)
-  updated_at           DateTime? @default(now()) @db.Timestamp(6)
-  username             String    @unique @db.VarChar(100)
-  role                 String?   @default("admin") @db.VarChar(20)
+model Team {
+  id        Int     @id @default(autoincrement())
+  name      String
+  players   Player[]
+  matches1  Match[] @relation("team1")
+  matches2  Match[] @relation("team2")
+  matchWins Match[] @relation("winner")
+  overs     Over[]
+  playerStats PlayerStats[]
 
-  @@index([email], map: "idx_admin_requests_email")
-  @@index([status], map: "idx_admin_requests_status")
-  @@index([username], map: "idx_admin_requests_username")
+  @@map("teams")
 }
 
-model admins {
-  id          Int       @id @default(autoincrement())
-  email       String    @unique @db.VarChar(255)
-  password    String    @db.VarChar(255)
-  name        String?   @db.VarChar(255)
-  permissions String[]  @default(["manage_matches", "view_matches", "manage_users"])
-  created_at  DateTime? @default(now()) @db.Timestamp(6)
-  updated_at  DateTime? @default(now()) @db.Timestamp(6)
-  username    String    @unique @db.VarChar(100)
-  role        String?   @default("admin") @db.VarChar(20)
+model Player {
+  id            Int     @id @default(autoincrement())
+  name          String
+  teamId        Int
+  team          Team    @relation(fields: [teamId], references: [id])
+  overs         Over[]
+  balls_batsman Ball[] @relation("batsman")
+  balls_bowler  Ball[] @relation("bowler")
+  playerStats   PlayerStats[]
+  playerDescriptions PlayerDescription[]
 
-  @@index([email], map: "idx_admins_email")
-  @@index([username], map: "idx_admins_username")
+  @@map("players")
 }
 
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-model balls {
-  id                                BigInt    @id @default(autoincrement())
-  over_id                           BigInt
-  ball_number                       Int
-  runs                              Int?      @default(0)
-  extras                            String?   @default("0")
-  event                             String?
-  is_wicket                         Boolean?  @default(false)
-  batsman_id                        BigInt?
-  bowler_id                         BigInt?
-  created_at                        DateTime? @default(now()) @db.Timestamptz(6)
-  players_balls_batsman_idToplayers players?  @relation("balls_batsman_idToplayers", fields: [batsman_id], references: [id], onUpdate: NoAction)
-  players_balls_bowler_idToplayers  players?  @relation("balls_bowler_idToplayers", fields: [bowler_id], references: [id], onUpdate: NoAction)
-  overs                             overs     @relation(fields: [over_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+model Stadium {
+  id        Int     @id @default(autoincrement())
+  name      String
+  city      String?
+  country   String?
+  capacity  Int?
+  matches   Match[]
 
-  @@index([batsman_id], map: "idx_balls_batsman_id")
-  @@index([over_id], map: "idx_balls_over_id")
-  @@index([is_wicket], map: "idx_balls_wicket")
+  @@map("stadiums")
 }
 
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-model matches {
-  id                                   BigInt                @id @default(autoincrement())
-  team1                                BigInt?
-  team2                                BigInt?
-  date                                 DateTime?             @db.Timestamptz(6)
-  venue                                String?
-  score                                String?
-  created_at                           DateTime?             @default(now()) @db.Timestamptz(6)
-  overs_per_inning                     Int?                  @default(20)
-  current_inning                       Int?                  @default(1)
-  inning1_team_id                      Int?
-  inning1_complete                     Boolean?              @default(false)
-  winner_team_id                       BigInt?
-  match_result                         String?               @db.VarChar(50)
-  is_match_complete                    Boolean?              @default(false)
-  match_status                         String?               @default("pending") @db.VarChar(50)
-  winner                               BigInt?
-  result_description                   String?
-  completed_at                         DateTime?             @db.Timestamp(6)
-  stadium_id                           Int?
-  format                               String?               @default("t20") @db.VarChar(50)
-  inning2_complete                     Boolean?              @default(false)
-  inning3_complete                     Boolean?              @default(false)
-  inning4_complete                     Boolean?              @default(false)
-  inning2_team_id                      BigInt?
-  inning3_team_id                     BigInt?
-  inning4_team_id                     BigInt?
-  innings_limit                        Int?                  @default(2)
-  follow_on_enforced                   Boolean?              @default(false)
-  teams_matches_inning2_team_idToteams teams?                @relation("matches_inning2_team_idToteams", fields: [inning2_team_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_inning2_team")
-  teams_matches_inning3_team_idToteams teams?                @relation("matches_inning3_team_idToteams", fields: [inning3_team_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_inning3_team")
-  teams_matches_inning4_team_idToteams teams?                @relation("matches_inning4_team_idToteams", fields: [inning4_team_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_inning4_team")
-  teams_matches_winner_team_idToteams  teams?                @relation("matches_winner_team_idToteams", fields: [winner_team_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_winner_team")
-  stadiums                             stadiums?             @relation(fields: [stadium_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  teams_matches_team1Toteams           teams?                @relation("matches_team1Toteams", fields: [team1], references: [id], onUpdate: NoAction)
-  teams_matches_team2Toteams           teams?                @relation("matches_team2Toteams", fields: [team2], references: [id], onUpdate: NoAction)
-  teams_matches_winnerToteams          teams?                @relation("matches_winnerToteams", fields: [winner], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  overs                                overs[]
-  player_descriptions                  player_descriptions[]
+model Match {
+  id                  Int     @id @default(autoincrement())
+  team1Id             Int
+  team2Id             Int
+  stadiumId           Int?
+  format              String?
+  oversPerInning      Int?
+  status              String?
+  inning1Complete     Boolean @default(false)
+  inning2Complete     Boolean @default(false)
+  inning3Complete     Boolean @default(false)
+  inning4Complete     Boolean @default(false)
+  winnerId            Int?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @default(now()) @updatedAt
+  
+  team1               Team    @relation("team1", fields: [team1Id], references: [id])
+  team2               Team    @relation("team2", fields: [team2Id], references: [id])
+  stadium             Stadium? @relation(fields: [stadiumId], references: [id])
+  winner              Team?   @relation("winner", fields: [winnerId], references: [id])
+  overs               Over[]
+  playerDescriptions  PlayerDescription[]
 
-  @@index([is_match_complete], map: "idx_matches_is_complete")
-  @@index([match_status], map: "idx_matches_status")
-  @@index([winner_team_id], map: "idx_matches_winner")
+  @@map("matches")
 }
 
-model overs {
-  id              BigInt    @id @default(autoincrement())
-  match_id        BigInt
-  over_number     Int
-  batting_team_id BigInt?
-  created_at      DateTime? @default(now()) @db.Timestamptz(6)
-  inning_number   Int
-  balls           balls[]
-  teams           teams?    @relation(fields: [batting_team_id], references: [id], onUpdate: NoAction)
-  matches         matches   @relation(fields: [match_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+model Over {
+  id              Int     @id @default(autoincrement())
+  matchId         Int
+  inningNumber    Int?
+  overNumber      Int?
+  bowlerId        Int?
+  battingTeamId   Int?
+  createdAt       DateTime @default(now())
+  
+  match           Match   @relation(fields: [matchId], references: [id])
+  bowler          Player? @relation(fields: [bowlerId], references: [id])
+  battingTeam     Team?   @relation(fields: [battingTeamId], references: [id])
+  balls           Ball[]
 
-  @@unique([match_id, over_number, batting_team_id, inning_number], map: "overs_match_id_over_number_batting_team_id_inning_key")
-  @@index([match_id, batting_team_id, over_number], map: "idx_overs_batting_team")
-  @@index([match_id], map: "idx_overs_match_id")
-  @@index([match_id, inning_number], map: "idx_overs_match_inning")
-  @@index([match_id, inning_number, batting_team_id], map: "idx_overs_match_inning_batting")
+  @@map("overs")
 }
 
-model player_descriptions {
-  id          BigInt    @id @default(autoincrement())
-  match_id    BigInt
-  player_id   BigInt
-  description String
+model Ball {
+  id          Int     @id @default(autoincrement())
+  overId      Int
+  ballNumber  Int?
+  batsmanId   Int?
+  bowlerId    Int?
+  runs        Int     @default(0)
+  extras      String?
+  event       String?
+  isWicket    Boolean @default(false)
+  dismissal   String?
+  createdAt   DateTime @default(now())
+  
+  over        Over    @relation(fields: [overId], references: [id])
+  batsman     Player? @relation("batsman", fields: [batsmanId], references: [id])
+  bowler      Player? @relation("bowler", fields: [bowlerId], references: [id])
+
+  @@map("balls")
+}
+
+model PlayerStats {
+  id              Int     @id @default(autoincrement())
+  playerId        Int
+  teamId          Int
+  format          String
+  matchesPlayed   Int     @default(0)
+  runsScored      Int     @default(0)
+  ballsFaced      Int     @default(0)
+  fours           Int     @default(0)
+  sixes           Int     @default(0)
+  centuries       Int     @default(0)
+  halfCenturies   Int     @default(0)
+  highestScore    Int     @default(0)
+  timesOut        Int     @default(0)
+  wicketsTaken    Int     @default(0)
+  runsConceded    Int     @default(0)
+  oversBowled     Decimal @default(0)
+  bestBowling     String  @default("0/0")
+  maidens         Int     @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @default(now()) @updatedAt
+  
+  player          Player  @relation(fields: [playerId], references: [id])
+  team            Team    @relation(fields: [teamId], references: [id])
+
+  @@unique([playerId, teamId, format])
+  @@map("player_stats")
+}
+
+model PlayerDescription {
+  id          Int     @id @default(autoincrement())
+  matchId     Int
+  playerId    Int
+  description String?
   author      String?
-  created_at  DateTime? @default(now()) @db.Timestamptz(6)
-  updated_at  DateTime? @default(now()) @db.Timestamptz(6)
-  matches     matches   @relation(fields: [match_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  players     players   @relation(fields: [player_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
+  
+  match       Match   @relation(fields: [matchId], references: [id])
+  player      Player  @relation(fields: [playerId], references: [id])
 
-  @@unique([match_id, player_id])
+  @@unique([matchId, playerId])
+  @@map("player_descriptions")
 }
 
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-model player_stats {
-  id             Int       @id @default(autoincrement())
-  player_id      BigInt
-  team_id        BigInt
-  format         String    @db.VarChar(20)
-  matches_played Int?      @default(0)
-  innings_batted Int?      @default(0)
-  runs_scored    Int?      @default(0)
-  balls_faced    Int?      @default(0)
-  fours          Int?      @default(0)
-  sixes          Int?      @default(0)
-  centuries      Int?      @default(0)
-  half_centuries Int?      @default(0)
-  highest_score  Int?      @default(0)
-  times_out      Int?      @default(0)
-  matches_bowled Int?      @default(0)
-  wickets_taken  Int?      @default(0)
-  runs_conceded  Int?      @default(0)
-  overs_bowled   Decimal?  @default(0) @db.Decimal(10, 1)
-  best_bowling   String?   @default("0/0") @db.VarChar(10)
-  maidens        Int?      @default(0)
-  dot_balls      Int?      @default(0)
-  created_at     DateTime? @default(now()) @db.Timestamp(6)
-  updated_at     DateTime? @default(now()) @db.Timestamp(6)
-  players        players   @relation(fields: [player_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  teams          teams     @relation(fields: [team_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+model RegularUser {
+  id        Int     @id @default(autoincrement())
+  email     String  @unique
+  password  String
+  name      String?
+  username  String  @unique
+  createdAt DateTime @default(now())
 
-  @@unique([player_id, team_id, format])
-  @@index([player_id, format], map: "idx_player_stats_player_format")
-  @@index([team_id, format], map: "idx_player_stats_team_format")
+  @@map("regular_users")
 }
 
-model players {
-  id                              BigInt                @id @default(autoincrement())
-  name                            String
-  team_id                         BigInt?
-  created_at                      DateTime?             @default(now()) @db.Timestamptz(6)
-  balls_balls_batsman_idToplayers balls[]               @relation("balls_batsman_idToplayers")
-  balls_balls_bowler_idToplayers  balls[]               @relation("balls_bowler_idToplayers")
-  player_descriptions             player_descriptions[]
-  player_stats                    player_stats[]
-  teams                           teams?                @relation(fields: [team_id], references: [id], onUpdate: NoAction)
+model Admin {
+  id        Int     @id @default(autoincrement())
+  email     String  @unique
+  password  String
+  name      String?
+  username  String  @unique
+  role      String?
+  createdAt DateTime @default(now())
 
-  @@index([team_id], map: "idx_players_team_id")
+  @@map("admins")
 }
 
-model regular_users {
-  id          Int       @id @default(autoincrement())
-  email       String    @unique @db.VarChar(255)
-  password    String    @db.VarChar(255)
-  name        String?   @db.VarChar(255)
-  permissions String[]  @default(["view_matches"])
-  created_at  DateTime? @default(now()) @db.Timestamp(6)
-  updated_at  DateTime? @default(now()) @db.Timestamp(6)
-  username    String    @unique @db.VarChar(100)
+model AdminRequest {
+  id                Int     @id @default(autoincrement())
+  email             String
+  password          String
+  name              String?
+  username          String
+  status            String  @default("pending")
+  requestedByEmail  String?
+  role              String?
+  createdAt         DateTime @default(now())
 
-  @@index([email], map: "idx_regular_users_email")
-  @@index([username], map: "idx_regular_users_username")
-}
-
-model stadiums {
-  id         Int       @id @default(autoincrement())
-  name       String    @unique @db.VarChar(255)
-  city       String?   @db.VarChar(255)
-  country    String?   @db.VarChar(255)
-  capacity   Int?
-  created_at DateTime? @default(now()) @db.Timestamp(6)
-  updated_at DateTime? @default(now()) @db.Timestamp(6)
-  matches    matches[]
-}
-
-model teams {
-  id                                     BigInt         @id @default(autoincrement())
-  name                                   String
-  created_at                             DateTime?      @default(now()) @db.Timestamptz(6)
-  matches_matches_inning2_team_idToteams matches[]      @relation("matches_inning2_team_idToteams")
-  matches_matches_inning3_team_idToteams matches[]      @relation("matches_inning3_team_idToteams")
-  matches_matches_inning4_team_idToteams matches[]      @relation("matches_inning4_team_idToteams")
-  matches_matches_winner_team_idToteams  matches[]      @relation("matches_winner_team_idToteams")
-  matches_matches_team1Toteams           matches[]      @relation("matches_team1Toteams")
-  matches_matches_team2Toteams           matches[]      @relation("matches_team2Toteams")
-  matches_matches_winnerToteams          matches[]      @relation("matches_winnerToteams")
-  overs                                  overs[]
-  player_stats                           player_stats[]
-  players                                players[]
+  @@map("admin_requests")
 }

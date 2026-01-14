@@ -1,9 +1,24 @@
 import { Router } from "express";
-import pool from "../db/connection.js";
+import {prisma} from "../db/connection.js";
 import { getIO } from "../server.ts";
 import { verifyToken, isSuperadmin, isAdmin, isAuthenticated } from "../middleware/auth.ts";
 
 const router: Router = Router();
+
+// Helper function to convert BigInt to string for socket.io serialization
+function serializeForSocket(obj: any): any {
+  if (obj === null || obj === undefined) return obj;
+  if (typeof obj === 'bigint') return String(obj);
+  if (obj instanceof Date) return obj.toISOString();
+  if (Array.isArray(obj)) return obj.map(serializeForSocket);
+  if (typeof obj === 'object') {
+    return Object.entries(obj).reduce((acc, [key, val]) => {
+      acc[key] = serializeForSocket(val);
+      return acc;
+    }, {} as any);
+  }
+  return obj;
+}
 
 //  to determine format based on overs per inning
 function getFormatFromOvers(oversPerInning: number): string {
@@ -34,27 +49,27 @@ async function updateBestBowling(bowlerId: number, teamId: number, format: any, 
       ORDER BY match_wickets DESC, match_runs ASC
     `;
     
-    const result = await pool.query(bowlingPerformancesQuery, [bowlerId, format, teamId]);
-    
-    console.log(`[BestBowling-DEBUG] Bowler ${bowlerId}, TeamId ${teamId}, Format ${format}: Found ${result.rows.length} matches`);
-    
-    if (result.rows.length === 0) {
+    // execute as parameterized raw query using prisma
+    const bowlingRows: any[] = await prisma.$queryRawUnsafe(bowlingPerformancesQuery, bowlerId, format, teamId) as any[];
+
+    console.log(`[BestBowling-DEBUG] Bowler ${bowlerId}, TeamId ${teamId}, Format ${format}: Found ${bowlingRows.length} matches`);
+
+    if (bowlingRows.length === 0) {
       console.log(`[BestBowling] No bowling records found for bowler ${bowlerId}`);
       return "0/0";
     }
-    
-    const bestPerf = result.rows[0];
+
+    const bestPerf = bowlingRows[0];
     const bestBowling = `${bestPerf.match_wickets}/${bestPerf.match_runs || 0}`;
     
     console.log(`[BestBowling-DEBUG] Best performance: wickets=${bestPerf.match_wickets}, runs=${bestPerf.match_runs || 0}`);
     
     // Update player_stats with best_bowling
-    await pool.query(
-      `UPDATE player_stats 
-       SET best_bowling = $1, updated_at = NOW()
-       WHERE player_id = $2 AND team_id = $3 AND format = $4`,
-      [bestBowling, bowlerId, teamId, format]
-    );
+    await prisma.$queryRaw`
+      UPDATE player_stats
+      SET best_bowling = ${bestBowling}, updated_at = NOW()
+      WHERE player_id = ${bowlerId} AND team_id = ${teamId} AND format = ${format}
+    `;
     
     console.log(`[BestBowling] Updated bowler ${bowlerId}: best_bowling = ${bestBowling} (format: ${format})`);
     return bestBowling;
@@ -68,15 +83,14 @@ async function updateBestBowling(bowlerId: number, teamId: number, format: any, 
 async function updateBatsmanMilestones(matchId: number, batsmanId: number, battingTeamId: number, format: string, inningNumber: number) {
   try {
     // Calculate batsman's inning score 
-    const inningScoreQuery = await pool.query(
-      `SELECT SUM(b.runs) as inning_total
-       FROM balls b
-       JOIN overs o ON b.over_id = o.id
-       WHERE o.match_id = $1 AND b.batsman_id = $2 AND o.batting_team_id = $3 AND o.inning_number = $4`,
-      [matchId, batsmanId, battingTeamId, inningNumber]
-    );
-    
-    const inningScore = parseInt(inningScoreQuery.rows[0]?.inning_total) || 0;
+    const inningRows: any[] = await prisma.$queryRaw`
+      SELECT SUM(b.runs) as inning_total
+      FROM balls b
+      JOIN overs o ON b.over_id = o.id
+      WHERE o.match_id = ${matchId} AND b.batsman_id = ${batsmanId} AND o.batting_team_id = ${battingTeamId} AND o.inning_number = ${inningNumber}
+    `;
+
+    const inningScore = parseInt(inningRows[0]?.inning_total) || 0;
     
     // Determine if this inning qualifies for half_century or century
     let halfCenturiesToAdd = 0;
@@ -94,14 +108,13 @@ async function updateBatsmanMilestones(matchId: number, batsmanId: number, batti
     
     if (halfCenturiesToAdd > 0 || centuriesToAdd > 0) {
       // Update player_stats with half_centuries and centuries
-      await pool.query(
-        `UPDATE player_stats 
-         SET half_centuries = half_centuries + $1,
-             centuries = centuries + $2,
-             updated_at = NOW()
-         WHERE player_id = $3 AND team_id = $4 AND format = $5`,
-        [halfCenturiesToAdd, centuriesToAdd, batsmanId, battingTeamId, format]
-      );
+      await prisma.$queryRaw`
+        UPDATE player_stats
+        SET half_centuries = half_centuries + ${halfCenturiesToAdd},
+            centuries = centuries + ${centuriesToAdd},
+            updated_at = NOW()
+        WHERE player_id = ${batsmanId} AND team_id = ${battingTeamId} AND format = ${format}
+      `;
       
       console.log(`[Milestone] Batsman ${batsmanId}: inning_score=${inningScore}, half_centuries+=\${halfCenturiesToAdd}, centuries+=\${centuriesToAdd}`);
     }
@@ -116,28 +129,26 @@ async function updateHighestScoreForInning(matchId: number, battingTeamId: numbe
     console.log(`[HighestScore-Inning] Updating highest_score for all batsmen in inning ${inningNumber} (Team ${battingTeamId}, Match ${matchId})`);
     
     // Get all batsmen and their inning scores
-    const batsmensQuery = await pool.query(
-      `SELECT DISTINCT b.batsman_id, SUM(b.runs) as inning_total
-       FROM balls b
-       JOIN overs o ON b.over_id = o.id
-       WHERE o.match_id = $1 AND o.batting_team_id = $2 AND o.inning_number = $3
-       GROUP BY b.batsman_id`,
-      [matchId, battingTeamId, inningNumber]
-    );
-    
-    console.log(`[HighestScore-Inning] Found ${batsmensQuery.rows.length} batsmen to update`);
-    
-    for (const batsman of batsmensQuery.rows) {
+    const batsmenRows: any[] = await prisma.$queryRaw`
+      SELECT DISTINCT b.batsman_id, SUM(b.runs) as inning_total
+      FROM balls b
+      JOIN overs o ON b.over_id = o.id
+      WHERE o.match_id = ${matchId} AND o.batting_team_id = ${battingTeamId} AND o.inning_number = ${inningNumber}
+      GROUP BY b.batsman_id
+    `;
+
+    console.log(`[HighestScore-Inning] Found ${batsmenRows.length} batsmen to update`);
+
+    for (const batsman of batsmenRows) {
       const batsmanId = batsman.batsman_id;
       const inningScore = parseInt(batsman.inning_total) || 0;
       
       // Update highest_score using GREATEST
-      await pool.query(
-        `UPDATE player_stats 
-         SET highest_score = GREATEST(highest_score, $1), updated_at = NOW()
-         WHERE player_id = $2 AND team_id = $3 AND format = $4`,
-        [inningScore, batsmanId, battingTeamId, format]
-      );
+      await prisma.$queryRaw`
+        UPDATE player_stats
+        SET highest_score = GREATEST(highest_score, ${inningScore}), updated_at = NOW()
+        WHERE player_id = ${batsmanId} AND team_id = ${battingTeamId} AND format = ${format}
+      `;
       
       console.log(`[HighestScore-Inning] Batsman ${batsmanId}: highest_score updated to at least ${inningScore}`);
     }
@@ -148,23 +159,22 @@ async function updateHighestScoreForInning(matchId: number, battingTeamId: numbe
 
 async function checkAndCompleteMatchIfNeeded(matchId: number) {
   try {
-    const matchResult = await pool.query(
-      `SELECT m.*, 
-              t1.name AS team1_name, 
-              t2.name AS team2_name,
-              m.inning1_team_id
-       FROM matches m
-       JOIN teams t1 ON t1.id = m.team1
-       JOIN teams t2 ON t2.id = m.team2
-       WHERE m.id = $1`,
-      [matchId]
-    );
+    const matchRows: any[] = await prisma.$queryRaw`
+      SELECT m.*, 
+             t1.name AS team1_name, 
+             t2.name AS team2_name,
+             m.inning1_team_id
+      FROM matches m
+      JOIN teams t1 ON t1.id = m.team1
+      JOIN teams t2 ON t2.id = m.team2
+      WHERE m.id = ${matchId}
+    `;
 
-    if (matchResult.rows.length === 0) {
+    if (matchRows.length === 0) {
       return null;
     }
 
-    const match = matchResult.rows[0];
+    const match = matchRows[0];
     
     match.team1 = parseInt(match.team1);
     match.team2 = parseInt(match.team2);
@@ -194,13 +204,13 @@ async function checkAndCompleteMatchIfNeeded(matchId: number) {
       GROUP BY o.batting_team_id
     `;
 
-    const inning1Result = await pool.query(inning1ScoreQuery, [matchId, inning1TeamId]);
+    const inning1ResultRows: any[] = await prisma.$queryRawUnsafe(inning1ScoreQuery, matchId, inning1TeamId) as any[];
     let inning1Score = 0;
     let inning1Wickets = 0;
     
-    if (inning1Result.rows.length > 0) {
-      inning1Score = parseInt(inning1Result.rows[0].total_runs) || 0;
-      inning1Wickets = parseInt(inning1Result.rows[0].wickets) || 0;
+    if (inning1ResultRows.length > 0) {
+      inning1Score = parseInt(inning1ResultRows[0].total_runs) || 0;
+      inning1Wickets = parseInt(inning1ResultRows[0].wickets) || 0;
     }
 
     const inning2ScoreQuery = `
@@ -214,13 +224,13 @@ async function checkAndCompleteMatchIfNeeded(matchId: number) {
       GROUP BY o.batting_team_id
     `;
 
-    const inning2Result = await pool.query(inning2ScoreQuery, [matchId, inning2TeamId]);
+    const inning2ResultRows: any[] = await prisma.$queryRawUnsafe(inning2ScoreQuery, matchId, inning2TeamId) as any[];
     let inning2Score = 0;
     let inning2Wickets = 0;
     
-    if (inning2Result.rows.length > 0) {
-      inning2Score = parseInt(inning2Result.rows[0].total_runs) || 0;
-      inning2Wickets = parseInt(inning2Result.rows[0].wickets) || 0;
+    if (inning2ResultRows.length > 0) {
+      inning2Score = parseInt(inning2ResultRows[0].total_runs) || 0;
+      inning2Wickets = parseInt(inning2ResultRows[0].wickets) || 0;
     }
 
     const allScoresQuery = `
@@ -234,13 +244,13 @@ async function checkAndCompleteMatchIfNeeded(matchId: number) {
       GROUP BY o.batting_team_id
     `;
     
-    const allScoresResult = await pool.query(allScoresQuery, [matchId]);
+    const allScoresRows: any[] = await prisma.$queryRawUnsafe(allScoresQuery, matchId) as any[];
     let team1TotalScore = 0;
     let team2TotalScore = 0;
     let team1TotalWickets = 0;
     let team2TotalWickets = 0;
     
-    for (const row of allScoresResult.rows) {
+    for (const row of allScoresRows) {
       const runs = parseInt(row.total_runs) || 0;
       const wickets = parseInt(row.wickets) || 0;
 
@@ -275,10 +285,10 @@ async function checkAndCompleteMatchIfNeeded(matchId: number) {
         GROUP BY o.batting_team_id
       `;
       
-      const inning3Result = await pool.query(inning3ScoreQuery, [matchId, inning1TeamId]);
+      const inning3Rows: any[] = await prisma.$queryRawUnsafe(inning3ScoreQuery, matchId, inning1TeamId) as any[];
       let inning3Score = 0;
-      if (inning3Result.rows.length > 0) {
-        inning3Score = parseInt(inning3Result.rows[0].total_runs) || 0;
+      if (inning3Rows.length > 0) {
+        inning3Score = parseInt(inning3Rows[0].total_runs) || 0;
       }
 
       const inning4ScoreQuery = `
@@ -292,12 +302,12 @@ async function checkAndCompleteMatchIfNeeded(matchId: number) {
         GROUP BY o.batting_team_id
       `;
       
-      const inning4Result = await pool.query(inning4ScoreQuery, [matchId, inning2TeamId]);
+      const inning4Rows: any[] = await prisma.$queryRawUnsafe(inning4ScoreQuery, matchId, inning2TeamId) as any[];
       let inning4Score = 0;
       let inning4Wickets = 0;
-      if (inning4Result.rows.length > 0) {
-        inning4Score = parseInt(inning4Result.rows[0].total_runs) || 0;
-        inning4Wickets = parseInt(inning4Result.rows[0].wickets) || 0;
+      if (inning4Rows.length > 0) {
+        inning4Score = parseInt(inning4Rows[0].total_runs) || 0;
+        inning4Wickets = parseInt(inning4Rows[0].wickets) || 0;
       }
 
       // Calculate cumulative scores
@@ -314,11 +324,10 @@ async function checkAndCompleteMatchIfNeeded(matchId: number) {
       // 2. Chasing team (inning 4) is all out (10 wickets), OR
       // 3. All overs completed (checked via inning4_complete flag in match table)
       
-      const matchInningStatusQuery = await pool.query(
-        `SELECT inning4_complete FROM matches WHERE id = $1`,
-        [matchId]
-      );
-      const inning4Complete = matchInningStatusQuery.rows[0]?.inning4_complete || false;
+      const matchInningStatusRows: any[] = await prisma.$queryRaw`
+        SELECT inning4_complete FROM matches WHERE id = ${matchId}
+      `;
+      const inning4Complete = matchInningStatusRows[0]?.inning4_complete || false;
 
       // Condition 1: Team 2 exceeded target - they won
       if (team2TotalForTest > team1TotalForTest) {
@@ -400,12 +409,11 @@ async function checkAndCompleteMatchIfNeeded(matchId: number) {
 
     if (shouldComplete) {
       // Update highest_score for both innings before completing match
-      const matchDetailsQuery = await pool.query(
-        `SELECT format, inning1_team_id FROM matches WHERE id = $1`,
-        [matchId]
-      );
-      const format = matchDetailsQuery.rows[0]?.format;
-      const inning1TeamId = parseInt(matchDetailsQuery.rows[0]?.inning1_team_id);
+      const matchDetailsRows: any[] = await prisma.$queryRaw`
+        SELECT format, inning1_team_id FROM matches WHERE id = ${matchId}
+      `;
+      const format = matchDetailsRows[0]?.format;
+      const inning1TeamId = parseInt(matchDetailsRows[0]?.inning1_team_id);
       const inning2TeamId = inning1TeamId === match.team1 ? match.team2 : match.team1;
       
       // Update highest_score for all innings
@@ -422,18 +430,17 @@ async function checkAndCompleteMatchIfNeeded(matchId: number) {
       }
       
       // Update match with completion status
-      const updateResult = await pool.query(
-        `UPDATE matches 
-         SET match_status = 'completed', winner = $1, result_description = $2, completed_at = NOW()
-         WHERE id = $3 
-         RETURNING *`,
-        [winner, result_description, matchId]
-      );
+      const updateResult: any[] = await prisma.$queryRaw`
+        UPDATE matches
+        SET match_status = 'completed', winner = ${winner}, result_description = ${result_description}, completed_at = NOW()
+        WHERE id = ${matchId}
+        RETURNING *
+      `;
 
       // Emit socket event for match completion
       const io = getIO();
       if (io) {
-        io.to(`match_${matchId}`).emit("matchComplete", {
+        io.to(`match_${matchId}`).emit("matchComplete", serializeForSocket({
           matchId: String(matchId),
           winner,
           result_description,
@@ -441,12 +448,12 @@ async function checkAndCompleteMatchIfNeeded(matchId: number) {
           team2Score: team2TotalScore,
           team1Wickets: team1TotalWickets,
           team2Wickets: team2TotalWickets,
-        });
+        }));
       }
 
       return {
         completed: true,
-        match: updateResult.rows[0],
+        match: updateResult[0],
         scores: {
           team1: { runs: team1TotalScore, wickets: team1TotalWickets },
           team2: { runs: team2TotalScore, wickets: team2TotalWickets },
@@ -465,7 +472,7 @@ async function checkAndCompleteMatchIfNeeded(matchId: number) {
 // get all matches
 router.get("/", async (req, res) => {
   try {
-    const result = await pool.query(`
+    const allMatches: any[] = await prisma.$queryRaw`
       SELECT 
         m.*,
         t1.id   AS team1_id,
@@ -475,8 +482,8 @@ router.get("/", async (req, res) => {
       FROM matches m
       JOIN teams t1 ON t1.id = m.team1
       JOIN teams t2 ON t2.id = m.team2
-    `);
-    res.json(result.rows);
+    `;
+    res.json(allMatches);
   } catch (err) {
     console.error(err);
     res.status(500).send("Server Error");
@@ -487,7 +494,7 @@ router.get("/", async (req, res) => {
 router.get("/:id", async (req, res) => {
   const { id } = req.params;
   try {
-    const result = await pool.query(`
+    const matchRows: any[] = await prisma.$queryRaw`
       SELECT 
         m.*,
         t1.id   AS team1_id,
@@ -497,12 +504,12 @@ router.get("/:id", async (req, res) => {
       FROM matches m
       JOIN teams t1 ON t1.id = m.team1
       JOIN teams t2 ON t2.id = m.team2
-      WHERE m.id = $1
-    `, [id]);
-    if (result.rows.length === 0) {
+      WHERE m.id = ${id}
+    `;
+    if (matchRows.length === 0) {
       return res.status(404).send("Match not found");
     }
-    res.json(result.rows[0]);
+    res.json(matchRows[0]);
   } catch (err) {
     console.error(err);
     res.status(500).send("Server Error");
@@ -518,42 +525,41 @@ router.post("/", verifyToken, isSuperadmin, async (req, res) => {
     // Randomly decide which team bats first in inning 1
     const inning1Team = Math.random() > 0.5 ? team1 : team2;
     
-    const result = await pool.query(
-      "INSERT INTO matches (team1, team2, date, venue, score, overs_per_inning, current_inning, inning1_complete, match_status, format, inning1_team_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *",
-      [team1, team2, date, venue, score, overs_per_inning, 1, false, 'pending', format, inning1Team]
-    );
-    
-    const matchId = result.rows[0].id;
+    const insertRows: any[] = await prisma.$queryRaw`
+      INSERT INTO matches (team1, team2, date, venue, score, overs_per_inning, current_inning, inning1_complete, match_status, format, inning1_team_id)
+      VALUES (${team1}, ${team2}, ${date}, ${venue}, ${score}, ${overs_per_inning}, 1, false, 'pending', ${format}, ${inning1Team})
+      RETURNING *
+    `;
+
+    const matchId = insertRows[0].id;
     
     console.log(`[Match] Created match ${matchId} between team ${team1} and team ${team2}. Team ${inning1Team} will bat first in Inning 1.`);
     
     // Increment match count for all players in both teams
-    const playersResult = await pool.query(
-      "SELECT id, team_id FROM players WHERE team_id IN ($1, $2)",
-      [team1, team2]
-    );
-    
-    console.log(`[Match-Increment] Found ${playersResult.rows.length} players in teams ${team1} and ${team2}`);
+    const playersRows: any[] = await prisma.$queryRaw`
+      SELECT id, team_id FROM players WHERE team_id IN (${team1}, ${team2})
+    `;
+
+    console.log(`[Match-Increment] Found ${playersRows.length} players in teams ${team1} and ${team2}`);
     
     // Increment match count for each player in their team's format
-    for (const player of playersResult.rows) {
+    for (const player of playersRows) {
       try {
-        const updateResult = await pool.query(
-          `INSERT INTO player_stats (player_id, team_id, format, matches_played)
-           VALUES ($1, $2, $3, 1)
-           ON CONFLICT (player_id, team_id, format) DO UPDATE SET
-           matches_played = player_stats.matches_played + 1,
-           updated_at = NOW()
-           RETURNING matches_played`,
-          [player.id, player.team_id, format]
-        );
-        console.log(`[Match-Increment] Player ${player.id} (Team ${player.team_id}): matches_played = ${updateResult.rows[0]?.matches_played}`);
+        const updateRows: any[] = await prisma.$queryRaw`
+          INSERT INTO player_stats (player_id, team_id, format, matches_played)
+          VALUES (${player.id}, ${player.team_id}, ${format}, 1)
+          ON CONFLICT (player_id, team_id, format) DO UPDATE SET
+          matches_played = player_stats.matches_played + 1,
+          updated_at = NOW()
+          RETURNING matches_played
+        `;
+        console.log(`[Match-Increment] Player ${player.id} (Team ${player.team_id}): matches_played = ${updateRows[0]?.matches_played}`);
       } catch (playerErr) {
         console.error(`Error incrementing match count for player ${player.id}:`, playerErr);
       }
     }
     
-    res.status(201).json(result.rows[0]);
+    res.status(201).json(insertRows[0]);
   } catch (err) {
     console.error(err);
     res.status(500).send("Server Error");
@@ -567,14 +573,14 @@ router.put("/:id", async (req, res) => {
   try {
     const format = getFormatFromOvers(overs_per_inning);
     
-    const result = await pool.query(
-      "UPDATE matches SET team1 = $1, team2 = $2, date = $3, venue = $4, score = $5, overs_per_inning = $6, format = $7 WHERE id = $8 RETURNING *",
-      [team1, team2, date, venue, score, overs_per_inning, format, id]
-    );
-    if (result.rows.length === 0) {
+    const updatedRows: any[] = await prisma.$queryRaw`
+      UPDATE matches SET team1 = ${team1}, team2 = ${team2}, date = ${date}, venue = ${venue}, score = ${score}, overs_per_inning = ${overs_per_inning}, format = ${format}
+      WHERE id = ${id} RETURNING *
+    `;
+    if (updatedRows.length === 0) {
       return res.status(404).send("Match not found");
     }
-    res.json(result.rows[0]);
+    res.json(updatedRows[0]);
   } catch (err) {
     console.error(err);
     res.status(500).send("Server Error");
@@ -586,17 +592,16 @@ router.put("/:id/inning", verifyToken, isAdmin, async (req, res) => {
   const { id } = req.params;
   const { battingTeamId } = req.body;
   try {
-    const result = await pool.query(
-      `UPDATE matches 
-       SET inning1_team_id = $1, inning1_complete = true, current_inning = 2, match_status = 'inning2' 
-       WHERE id = $2 
-       RETURNING *`,
-      [battingTeamId, id]
-    );
-    if (result.rows.length === 0) {
+    const inningRows: any[] = await prisma.$queryRaw`
+      UPDATE matches
+      SET inning1_team_id = ${battingTeamId}, inning1_complete = true, current_inning = 2, match_status = 'inning2'
+      WHERE id = ${id}
+      RETURNING *
+    `;
+    if (inningRows.length === 0) {
       return res.status(404).send("Match not found");
     }
-    res.json(result.rows[0]);
+    res.json(inningRows[0]);
   } catch (err) {
     console.error(err);
     res.status(500).send("Server Error");
@@ -608,21 +613,17 @@ router.put("/:id/complete", verifyToken, isAdmin, async (req, res) => {
   const { id } = req.params;
   try {
     // Get match details with team names
-    const matchResult = await pool.query(
-      `SELECT 
-        m.*,
-        t1.name AS team1_name,
-        t2.name AS team2_name
+    const matchRows: any[] = await prisma.$queryRaw`
+      SELECT m.*, t1.name AS team1_name, t2.name AS team2_name
       FROM matches m
       JOIN teams t1 ON t1.id = m.team1
       JOIN teams t2 ON t2.id = m.team2
-      WHERE m.id = $1`,
-      [id]
-    );
-    if (matchResult.rows.length === 0) {
+      WHERE m.id = ${id}
+    `;
+    if (matchRows.length === 0) {
       return res.status(404).send("Match not found");
     }
-    const match = matchResult.rows[0];
+    const match = matchRows[0];
 
     // Check if match is in correct inning for completion
     const isTestFormat = match.format === 'test';
@@ -651,7 +652,7 @@ router.put("/:id/complete", verifyToken, isAdmin, async (req, res) => {
       ORDER BY o.batting_team_id
     `;
 
-    const scoreResult = await pool.query(scoreQuery, [id]);
+    const scoreResult = await prisma.$queryRawUnsafe(scoreQuery, id) as any[];
     
     let team1Score = 0;
     let team2Score = 0;
@@ -667,7 +668,7 @@ router.put("/:id/complete", verifyToken, isAdmin, async (req, res) => {
       
       let inning1Score = 0, inning2Score = 0, inning3Score = 0, inning4Score = 0;
       
-      for (const row of scoreResult.rows) {
+      for (const row of scoreResult) {
         const runs = parseInt(row.total_runs) || 0;
         const wickets = parseInt(row.wickets) || 0;
 
@@ -702,7 +703,7 @@ router.put("/:id/complete", verifyToken, isAdmin, async (req, res) => {
       console.log(`[Manual-Complete-Test] Team 1 Total: ${team1Score}, Team 2 Total: ${team2Score}`);
     } else {
       // For non-test formats, simple score aggregation
-      for (const row of scoreResult.rows) {
+      for (const row of scoreResult) {
         const runs = parseInt(row.total_runs) || 0;
         const wickets = parseInt(row.wickets) || 0;
 
@@ -720,29 +721,43 @@ router.put("/:id/complete", verifyToken, isAdmin, async (req, res) => {
     let winner = null;
     let result_description = "Match Tied";
 
+    // Get inning information to determine if it's a chasing scenario
+    const inningInfoRows: any[] = await prisma.$queryRawUnsafe(`
+      SELECT current_inning, inning1_complete, inning2_complete FROM matches WHERE id = $1
+    `, parseInt(id || '0')) as any[];
+    
+    const inningInfo = inningInfoRows[0];
+
     if (team1Score > team2Score) {
       winner = match.team1;
+      // If Team 2 is chasing (inning1_complete) AND Team 1 won, it means Team 2 failed to chase
+      // In this case, always show "won by runs" (the margin between scores)
       const margin = team1Score - team2Score;
       result_description = `${match.team1_name} won by ${margin} runs`;
     } else if (team2Score > team1Score) {
       winner = match.team2;
-      const margin = team2Score - team1Score;
-      result_description = `${match.team2_name} won by ${margin} runs`;
+      // If Team 2 is chasing (inning1_complete) AND Team 2 won with wickets remaining, show wickets
+      if (!isTestFormat && inningInfo?.inning1_complete && team2Wickets < 10) {
+        const wicketsRemaining = 10 - team2Wickets;
+        result_description = `${match.team2_name} won by ${wicketsRemaining} wicket${wicketsRemaining === 1 ? '' : 's'}`;
+      } else {
+        const margin = team2Score - team1Score;
+        result_description = `${match.team2_name} won by ${margin} runs`;
+      }
     }
 
     // Update match with completion status and winner
-    const updateResult = await pool.query(
-      `UPDATE matches 
-       SET match_status = 'completed', winner = $1, result_description = $2, completed_at = NOW()
-       WHERE id = $3 
-       RETURNING *`,
-      [winner, result_description, id]
-    );
+    const updateRows: any[] = await prisma.$queryRaw`
+      UPDATE matches
+      SET match_status = 'completed', winner = ${winner}, result_description = ${result_description}, completed_at = NOW()
+      WHERE id = ${id}
+      RETURNING *
+    `;
 
     // Emit socket event for match completion
     const io = getIO();
     if (io) {
-      io.to(`match_${id}`).emit("matchComplete", {
+      io.to(`match_${id}`).emit("matchComplete", serializeForSocket({
         matchId: String(id),
         winner,
         result_description,
@@ -750,11 +765,11 @@ router.put("/:id/complete", verifyToken, isAdmin, async (req, res) => {
         team2Score,
         team1Wickets,
         team2Wickets,
-      });
+      }));
     }
 
     res.json({
-      match: updateResult.rows[0],
+      match: updateRows[0],
       scores: {
         team1: { runs: team1Score, wickets: team1Wickets },
         team2: { runs: team2Score, wickets: team2Wickets },
@@ -771,11 +786,10 @@ router.put("/:id/complete", verifyToken, isAdmin, async (req, res) => {
 router.delete("/:id", verifyToken, isSuperadmin, async (req, res) => {
   const { id } = req.params;
   try {
-    const result = await pool.query(
-      "DELETE FROM matches WHERE id = $1 RETURNING *",
-      [id]
-    );
-    if (result.rows.length === 0) {
+    const delRows: any[] = await prisma.$queryRaw`
+      DELETE FROM matches WHERE id = ${id} RETURNING *
+    `;
+    if (delRows.length === 0) {
       return res.status(404).send("Match not found");
     }
     res.json({ message: "Match deleted successfully" });
@@ -790,14 +804,13 @@ router.get("/:id/score", async (req, res) => {
   const { id } = req.params;
   try {
     // Get match details
-    const matchResult = await pool.query(
-      "SELECT * FROM matches WHERE id = $1",
-      [id]
-    );
-    if (matchResult.rows.length === 0) {
+    const matchRows: any[] = await prisma.$queryRaw`
+      SELECT * FROM matches WHERE id = ${id}
+    `;
+    if (matchRows.length === 0) {
       return res.status(404).send("Match not found");
     }
-    const match = matchResult.rows[0];
+    const match = matchRows[0];
     const format = match.format || 'odi';
 
     // Aggregate scores per team per inning
@@ -818,9 +831,9 @@ router.get("/:id/score", async (req, res) => {
       ORDER BY o.inning_number
     `;
 
-    const scoreResult = await pool.query(scoreQuery, [id]);
+    const scoreResultRows: any[] = await prisma.$queryRawUnsafe(scoreQuery, id) as any[];
 
-    const innings = scoreResult.rows.map((row) => {
+    const innings = scoreResultRows.map((row) => {
       let completedOvers = parseInt(row.completed_overs) || 0;
       let ballsInOver = parseInt(row.balls_in_current_over) || 0;
 
@@ -868,9 +881,9 @@ router.get("/:id/teams/:teamId/score", async (req, res) => {
       WHERE o.match_id = $1 AND o.batting_team_id = $2
     `;
 
-    const scoreResult = await pool.query(scoreQuery, [id, teamId]);
+    const scoreResultRows: any[] = await prisma.$queryRawUnsafe(scoreQuery, id, teamId) as any[];
 
-    if (scoreResult.rows.length === 0 || !scoreResult.rows[0].total_runs) {
+    if (scoreResultRows.length === 0 || !scoreResultRows[0].total_runs) {
       return res.json({
         matchId: parseInt(id),
         teamId: parseInt(teamId),
@@ -880,7 +893,7 @@ router.get("/:id/teams/:teamId/score", async (req, res) => {
       });
     }
 
-    const row = scoreResult.rows[0];
+    const row = scoreResultRows[0];
     let completedOvers = parseInt(row.completed_overs) || 0;
     let ballsInOver = parseInt(row.balls_in_current_over) || 0;
 
@@ -924,16 +937,15 @@ router.post("/:matchId/ball", verifyToken, isAdmin, async (req, res) => {
 
   try {
     // Verify match exists and get current inning
-    const matchCheck = await pool.query(
-      "SELECT id, match_status, current_inning FROM matches WHERE id = $1",
-      [matchId]
-    );
-    
-    if (matchCheck.rows.length === 0) {
+    const matchCheckRows: any[] = await prisma.$queryRaw`
+      SELECT id, match_status, current_inning FROM matches WHERE id = ${matchId}
+    `;
+
+    if (matchCheckRows.length === 0) {
       return res.status(404).json({ error: "Match not found" });
     }
 
-    const match = matchCheck.rows[0];
+    const match = matchCheckRows[0];
     const currentInning = parseInt(match.current_inning) || 1;
 
     // Prevent adding balls to completed matches
@@ -942,21 +954,20 @@ router.post("/:matchId/ball", verifyToken, isAdmin, async (req, res) => {
     }
 
     // Find or create the over (now with inning_number for proper separation)
-    let overResult = await pool.query(
-      "SELECT id FROM overs WHERE match_id = $1 AND over_number = $2 AND batting_team_id = $3 AND inning_number = $4",
-      [matchId, overNumber, battingTeamId, currentInning]
-    );
+    let overResult: any[] = await prisma.$queryRaw`
+      SELECT id FROM overs WHERE match_id = ${matchId} AND over_number = ${overNumber} AND batting_team_id = ${battingTeamId} AND inning_number = ${currentInning}
+    `;
 
     let overId;
-    if (overResult.rows.length === 0) {
+    if (overResult.length === 0) {
       // Create new over if it doesn't exist (with inning_number for proper tracking)
-      const newOver = await pool.query(
-        "INSERT INTO overs (match_id, over_number, batting_team_id, inning_number) VALUES ($1, $2, $3, $4) RETURNING id",
-        [matchId, overNumber, battingTeamId, currentInning]
-      );
-      overId = newOver.rows[0].id;
+      const newOverRows: any[] = await prisma.$queryRaw`
+        INSERT INTO overs (match_id, over_number, batting_team_id, inning_number)
+        VALUES (${matchId}, ${overNumber}, ${battingTeamId}, ${currentInning}) RETURNING id
+      `;
+      overId = newOverRows[0].id;
     } else {
-      overId = overResult.rows[0].id;
+      overId = overResult[0].id;
     }
 
     // Insert the ball
@@ -970,20 +981,10 @@ router.post("/:matchId/ball", verifyToken, isAdmin, async (req, res) => {
       Boolean(wicket) ||
       (typeof eventValue === "string" && /wicket|\bout\b/i.test(eventValue));
 
-    const ballResult = await pool.query(
-      `INSERT INTO balls (over_id, ball_number, runs, extras, event, is_wicket, batsman_id, bowler_id) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
-      [
-        overId,
-        ballNumber,
-        runs || 0,
-        extras || "0",
-        eventValue,
-        isWicket,
-        batsmanId,
-        bowlerId,
-      ]
-    );
+    const ballRows: any[] = await prisma.$queryRaw`
+      INSERT INTO balls (over_id, ball_number, runs, extras, event, is_wicket, batsman_id, bowler_id)
+      VALUES (${overId}, ${ballNumber}, ${runs || 0}, ${extras || "0"}, ${eventValue}, ${isWicket}, ${batsmanId}, ${bowlerId}) RETURNING *
+    `;
 
     // Emit live update via socket.io
     const io = getIO();
@@ -993,22 +994,21 @@ router.post("/:matchId/ball", verifyToken, isAdmin, async (req, res) => {
       const payload = {
         matchId: String(matchId),
         liveScore: `Over ${displayOver}.${displayBall}: ${runs || 0} runs${wicket ? " - WICKET!" : ""}`,
-        ball: ballResult.rows[0],
+        ball: ballRows[0],
       };
-      io.to(`match_${matchId}`).emit("ballUpdate", payload);
+      io.to(`match_${matchId}`).emit("ballUpdate", serializeForSocket(payload));
     }
 
     // Get the ID of the ball we just inserted
-    const currentBallId = ballResult.rows[0]?.id;
+    const currentBallId = ballRows[0]?.id;
 
     // Update player stats for batsman (non-blocking)
     if (batsmanId) {
       try {
-        const matchFormatResult = await pool.query(
-          "SELECT COALESCE(format, 't20') as format FROM matches WHERE id = $1",
-          [matchId]
-        );
-        const format = matchFormatResult.rows[0]?.format || "t20";
+        const matchFormatRows: any[] = await prisma.$queryRaw`
+          SELECT COALESCE(format, 't20') as format FROM matches WHERE id = ${matchId}
+        `;
+        const format = matchFormatRows[0]?.format || "t20";
 
         const runsScored = runs || 0;
         const isFour = runsScored === 4 ? 1 : 0;
@@ -1022,25 +1022,19 @@ router.post("/:matchId/ball", verifyToken, isAdmin, async (req, res) => {
           JOIN overs o ON b.over_id = o.id
           WHERE o.match_id = $1 AND b.batsman_id = $2 AND o.batting_team_id = $3 AND b.id != $4
         `;
-        const inningScoreResult = await pool.query(batsmanInningScoreQuery, [matchId, batsmanId, battingTeamId, currentBallId]);
-        const runsBeforeThisBall = parseInt(inningScoreResult.rows[0]?.inning_runs) || 0;
+        const inningScoreRows: any[] = await prisma.$queryRawUnsafe(batsmanInningScoreQuery, matchId, batsmanId, battingTeamId, currentBallId) as any[];
+        const runsBeforeThisBall = parseInt(inningScoreRows[0]?.inning_runs) || 0;
         const inningRunsAfterThisBall = runsBeforeThisBall + runsScored;
 
         console.log(`[Stats-INNING] Batsman ${batsmanId}: before=${runsBeforeThisBall}, this_ball=${runsScored}, after=${inningRunsAfterThisBall}`);
 
         // Check if batsman got out or if match is completed
-        const matchStatusQuery = await pool.query(
-          "SELECT match_status FROM matches WHERE id = $1",
-          [matchId]
-        );
-        const matchStatus = matchStatusQuery.rows[0]?.match_status;
+        const matchStatusRows: any[] = await prisma.$queryRawUnsafe(`SELECT match_status FROM matches WHERE id = $1`, matchId) as any[];
+        const matchStatus = matchStatusRows[0]?.match_status;
         
         // Get existing highest_score to compare
-        const existingStatsQuery = await pool.query(
-          "SELECT highest_score FROM player_stats WHERE player_id = $1 AND team_id = $2 AND format = $3",
-          [batsmanId, battingTeamId, format]
-        );
-        const existingHighest = parseInt(existingStatsQuery.rows[0]?.highest_score) || 0;
+        const existingStatsRows: any[] = await prisma.$queryRawUnsafe(`SELECT highest_score FROM player_stats WHERE player_id = $1 AND team_id = $2 AND format = $3`, batsmanId, battingTeamId, format) as any[];
+        const existingHighest = parseInt(existingStatsRows[0]?.highest_score) || 0;
 
         // Update highest_score with current inning total using GREATEST
         // This will always track the maximum score in a single inning
@@ -1052,21 +1046,20 @@ router.post("/:matchId/ball", verifyToken, isAdmin, async (req, res) => {
         console.log(`[Stats] Updating batsman ${batsmanId}: +${runsScored} runs, innings_total=${inningRunsAfterThisBall}, isOut=${isWicket}, matchStatus=${matchStatus}, existingHighest=${existingHighest}, newHighest=${highestScoreToStore}`);
 
         // Upsert batsman stats
-        const batsmanResult = await pool.query(
-          `INSERT INTO player_stats (player_id, team_id, format, runs_scored, balls_faced, fours, sixes, times_out, highest_score, matches_played)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 0)
-           ON CONFLICT (player_id, team_id, format) DO UPDATE SET
-           runs_scored = player_stats.runs_scored + $4,
-           balls_faced = player_stats.balls_faced + $5,
-           fours = player_stats.fours + $6,
-           sixes = player_stats.sixes + $7,
-           times_out = player_stats.times_out + $8,
-           highest_score = GREATEST(player_stats.highest_score, $9),
-           updated_at = NOW()`,
-          [batsmanId, battingTeamId, format, runsScored, 1, isFour, isSix, timesOutIncrement, highestScoreToStore]
-        );
+        const batsmanUpsertRows: any[] = await prisma.$queryRaw`
+          INSERT INTO player_stats (player_id, team_id, format, runs_scored, balls_faced, fours, sixes, times_out, highest_score, matches_played)
+          VALUES (${batsmanId}, ${battingTeamId}, ${format}, ${runsScored}, 1, ${isFour}, ${isSix}, ${timesOutIncrement}, ${highestScoreToStore}, 0)
+          ON CONFLICT (player_id, team_id, format) DO UPDATE SET
+          runs_scored = player_stats.runs_scored + ${runsScored},
+          balls_faced = player_stats.balls_faced + 1,
+          fours = player_stats.fours + ${isFour},
+          sixes = player_stats.sixes + ${isSix},
+          times_out = player_stats.times_out + ${timesOutIncrement},
+          highest_score = GREATEST(player_stats.highest_score, ${highestScoreToStore}),
+          updated_at = NOW()
+        `;
 
-        console.log(`[Stats] Batsman ${batsmanId} updated, affected rows:`, batsmanResult.rowCount);
+        console.log(`[Stats] Batsman ${batsmanId} updated, result rows:`, batsmanUpsertRows.length);
 
         // If batsman got out, update milestones (50s and 100s)
         if (isWicket) {
@@ -1075,11 +1068,11 @@ router.post("/:matchId/ball", verifyToken, isAdmin, async (req, res) => {
 
         // Emit stats update via socket.io
         if (io) {
-          io.to(`match_${matchId}`).emit("statsUpdated", {
+          io.to(`match_${matchId}`).emit("statsUpdated", serializeForSocket({
             matchId: String(matchId),
             playerId: batsmanId,
             type: "batting",
-          });
+          }));
         }
       } catch (statsErr) {
         console.error("Error updating batsman stats:", statsErr);
@@ -1089,18 +1082,16 @@ router.post("/:matchId/ball", verifyToken, isAdmin, async (req, res) => {
     // Update player stats for bowler 
     if (bowlerId) {
       try {
-        const matchFormatResult = await pool.query(
-          "SELECT COALESCE(format, 't20') as format FROM matches WHERE id = $1",
-          [matchId]
-        );
-        const format = matchFormatResult.rows[0]?.format || "t20";
+        const matchFormatRows2: any[] = await prisma.$queryRaw`
+          SELECT COALESCE(format, 't20') as format FROM matches WHERE id = ${matchId}
+        `;
+        const format = matchFormatRows2[0]?.format || "t20";
 
         // Get bowling team (opposite of batting team)
-        const bowlingTeamResult = await pool.query(
-          "SELECT CASE WHEN team1 = $1 THEN team2 ELSE team1 END as team_id FROM matches WHERE id = $2",
-          [battingTeamId, matchId]
-        );
-        const bowlingTeamId = bowlingTeamResult.rows[0]?.team_id;
+        const bowlingTeamRows: any[] = await prisma.$queryRaw`
+          SELECT CASE WHEN team1 = ${battingTeamId} THEN team2 ELSE team1 END as team_id FROM matches WHERE id = ${matchId}
+        `;
+        const bowlingTeamId = bowlingTeamRows[0]?.team_id;
 
         if (bowlingTeamId) {
           const runsGiven = (runs || 0) + (extras ? parseInt(extras) : 0);
@@ -1119,17 +1110,16 @@ router.post("/:matchId/ball", verifyToken, isAdmin, async (req, res) => {
           let isMaidenOver = false;
           if (ballInOver === 6) {
             // This is the last ball of the over, check total runs in this over
-            const overTotalRunsCheck = await pool.query(
-              `SELECT SUM(COALESCE(CAST(b.extras AS INTEGER), 0)) as extra_runs,
-                      SUM(b.runs) as ball_runs
-               FROM balls b
-               JOIN overs o ON b.over_id = o.id
-               WHERE o.match_id = $1 AND o.over_number = $2 AND b.bowler_id = $3`,
-              [matchId, overNumber, bowlerId]
-            );
+            const overTotalRunsRows: any[] = await prisma.$queryRaw`
+              SELECT SUM(COALESCE(CAST(b.extras AS INTEGER), 0)) as extra_runs,
+                     SUM(b.runs) as ball_runs
+              FROM balls b
+              JOIN overs o ON b.over_id = o.id
+              WHERE o.match_id = ${matchId} AND o.over_number = ${overNumber} AND b.bowler_id = ${bowlerId}
+            `;
             
-            const totalExtraRuns = parseInt(overTotalRunsCheck.rows[0]?.extra_runs) || 0;
-            const totalBallRuns = parseInt(overTotalRunsCheck.rows[0]?.ball_runs) || 0;
+            const totalExtraRuns = parseInt(overTotalRunsRows[0]?.extra_runs) || 0;
+            const totalBallRuns = parseInt(overTotalRunsRows[0]?.ball_runs) || 0;
             const totalRunsInOver = totalExtraRuns + totalBallRuns;
             
             // Maiden over: 6 balls bowled with 0 runs conceded
@@ -1143,30 +1133,29 @@ router.post("/:matchId/ball", verifyToken, isAdmin, async (req, res) => {
           // Only update maiden count if this is the 6th ball of the over
           const maidenIncrement = (ballInOver === 6 && isMaidenOver) ? 1 : 0;
           
-          const bowlerResult = await pool.query(
-            `INSERT INTO player_stats (player_id, team_id, format, runs_conceded, overs_bowled, wickets_taken, maidens, matches_played)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, 0)
-             ON CONFLICT (player_id, team_id, format) DO UPDATE SET
-             runs_conceded = player_stats.runs_conceded + $4,
-             overs_bowled = ROUND((player_stats.overs_bowled::numeric + $5::numeric)::numeric, 1),
-             wickets_taken = player_stats.wickets_taken + $6,
-             maidens = player_stats.maidens + $7,
-             updated_at = NOW()`,
-            [bowlerId, bowlingTeamId, format, runsGiven, oversToAdd, wicketCount, maidenIncrement]
-          );
+          const bowlerUpsertRows: any[] = await prisma.$queryRaw`
+            INSERT INTO player_stats (player_id, team_id, format, runs_conceded, overs_bowled, wickets_taken, maidens, matches_played)
+            VALUES (${bowlerId}, ${bowlingTeamId}, ${format}, ${runsGiven}, ${oversToAdd}, ${wicketCount}, ${maidenIncrement}, 0)
+            ON CONFLICT (player_id, team_id, format) DO UPDATE SET
+            runs_conceded = player_stats.runs_conceded + ${runsGiven},
+            overs_bowled = ROUND((player_stats.overs_bowled::numeric + ${oversToAdd}::numeric)::numeric, 1),
+            wickets_taken = player_stats.wickets_taken + ${wicketCount},
+            maidens = player_stats.maidens + ${maidenIncrement},
+            updated_at = NOW()
+          `;
 
-          console.log(`[Stats] Bowler ${bowlerId} updated, affected rows:`, bowlerResult.rowCount);
+          console.log(`[Stats] Bowler ${bowlerId} updated, result rows:`, bowlerUpsertRows.length);
 
           // Update best bowling for this bowler
           await updateBestBowling(parseInt(bowlerId), bowlingTeamId, format, matchId);
 
           // Emit stats update via socket.io
           if (io) {
-            io.to(`match_${matchId}`).emit("statsUpdated", {
+            io.to(`match_${matchId}`).emit("statsUpdated", serializeForSocket({
               matchId: String(matchId),
               playerId: bowlerId,
               type: "bowling",
-            });
+            }));
           }
         }
       } catch (statsErr) {
@@ -1177,32 +1166,30 @@ router.post("/:matchId/ball", verifyToken, isAdmin, async (req, res) => {
     // Check if batting team is all out 
     if (isWicket) {
       try {
-        const wicketsInInningQuery = await pool.query(
-          `SELECT COUNT(CASE WHEN b.is_wicket THEN 1 END) as total_wickets
-           FROM balls b
-           JOIN overs o ON b.over_id = o.id
-           WHERE o.match_id = $1 AND o.batting_team_id = $2 AND o.inning_number = $3`,
-          [matchId, battingTeamId, currentInning]
-        );
-        const totalWicketsInInning = parseInt(wicketsInInningQuery.rows[0]?.total_wickets) || 0;
+        const wicketsInInningRows: any[] = await prisma.$queryRaw`
+          SELECT COUNT(CASE WHEN b.is_wicket THEN 1 END) as total_wickets
+          FROM balls b
+          JOIN overs o ON b.over_id = o.id
+          WHERE o.match_id = ${matchId} AND o.batting_team_id = ${battingTeamId} AND o.inning_number = ${currentInning}
+        `;
+        const totalWicketsInInning = parseInt(wicketsInInningRows[0]?.total_wickets) || 0;
 
         // If 10 wickets have fallen, end the inning
         if (totalWicketsInInning >= 10) {
           console.log(`[AllOut] Team ${battingTeamId} is ALL OUT! Wickets: ${totalWicketsInInning}`);
           
           // Get match details
-          const matchCheckQuery = await pool.query(
-            `SELECT m.current_inning, m.team1, m.team2, m.inning1_team_id, m.format
-             FROM matches m
-             WHERE m.id = $1`,
-            [matchId]
-          );
+          const matchCheckRows2: any[] = await prisma.$queryRaw`
+            SELECT m.current_inning, m.team1, m.team2, m.inning1_team_id, m.format
+            FROM matches m
+            WHERE m.id = ${matchId}
+          `;
           
-          const currentInning = matchCheckQuery.rows[0]?.current_inning;
-          const format = matchCheckQuery.rows[0]?.format;
-          const team1 = parseInt(matchCheckQuery.rows[0]?.team1);
-          const team2 = parseInt(matchCheckQuery.rows[0]?.team2);
-          const inning1TeamId = parseInt(matchCheckQuery.rows[0]?.inning1_team_id);
+          const currentInning = matchCheckRows2[0]?.current_inning;
+          const format = matchCheckRows2[0]?.format;
+          const team1 = parseInt(matchCheckRows2[0]?.team1);
+          const team2 = parseInt(matchCheckRows2[0]?.team2);
+          const inning1TeamId = parseInt(matchCheckRows2[0]?.inning1_team_id);
           
           // inning2TeamId is the other team
           const inning2TeamId = inning1TeamId === team1 ? team2 : team1;
@@ -1217,13 +1204,12 @@ router.post("/:matchId/ball", verifyToken, isAdmin, async (req, res) => {
 
           if (currentInning === 1) {
             // Inning 1 complete, mark it and move to inning 2
-            const updateResult = await pool.query(
-              `UPDATE matches 
-               SET inning1_complete = true, current_inning = 2, inning2_team_id = $1
-               WHERE id = $2
-               RETURNING *`,
-              [inning2TeamId, matchId]
-            );
+            const updateRows1: any[] = await prisma.$queryRaw`
+              UPDATE matches
+              SET inning1_complete = true, current_inning = 2, inning2_team_id = ${inning2TeamId}
+              WHERE id = ${matchId}
+              RETURNING *
+            `;
             
             // Update highest_score for all batsmen in this inning
             const battingTeamIdNum = parseInt(battingTeamId as any);
@@ -1233,19 +1219,19 @@ router.post("/:matchId/ball", verifyToken, isAdmin, async (req, res) => {
 
             // Emit socket event using existing io
             if (io) {
-              io.to(`match_${matchId}`).emit("inningEnd", {
+              io.to(`match_${matchId}`).emit("inningEnd", serializeForSocket({
                 matchId: String(matchId),
                 inning: 1,
                 message: `Inning 1 complete - Team all out!`,
                 nextInningTeam: inning2TeamId,
-              });
+              }));
             }
             
             return res.status(201).json({
               completed: false,
               inningEnded: true,
               inning: 1,
-              match: updateResult.rows[0],
+              match: updateRows1[0],
             });
           } else if (currentInning === 2) {
             // Update highest_score for all batsmen in inning 2
@@ -1254,57 +1240,55 @@ router.post("/:matchId/ball", verifyToken, isAdmin, async (req, res) => {
 
             if (isTestFormat) {
               // Test format: Move to inning 3 (Team 1 gets another chance)
-              const updateResult = await pool.query(
-                `UPDATE matches 
-                 SET inning2_complete = true, current_inning = 3, inning3_team_id = $1
-                 WHERE id = $2
-                 RETURNING *`,
-                [inning3TeamId, matchId]
-              );
+              const updateRows2: any[] = await prisma.$queryRaw`
+                UPDATE matches
+                SET inning2_complete = true, current_inning = 3, inning3_team_id = ${inning3TeamId}
+                WHERE id = ${matchId}
+                RETURNING *
+              `;
               
               console.log(`[AllOut-Test] Inning 2 ended. Moving to Inning 3. Team ${inning3TeamId} will bat now.`);
 
               if (io) {
-                io.to(`match_${matchId}`).emit("inningEnd", {
+                io.to(`match_${matchId}`).emit("inningEnd", serializeForSocket({
                   matchId: String(matchId),
                   inning: 2,
                   message: `Inning 2 complete! Moving to Inning 3...`,
                   nextInningTeam: inning3TeamId,
                   nextInning: 3,
-                });
+                }));
               }
               
               return res.status(201).json({
                 completed: false,
                 inningEnded: true,
                 inning: 2,
-                match: updateResult.rows[0],
+                match: updateRows2[0],
               });
             } else {
               // Other formats: Complete match - team from inning 1 wins
               const resultDescription = `${inning1TeamId === team1 ? 'Team 1' : 'Team 2'} won (inning 2 all out)`;
 
-              const updateResult = await pool.query(
-                `UPDATE matches 
-                 SET match_status = 'completed', winner = $1, result_description = $2, completed_at = NOW()
-                 WHERE id = $3
-                 RETURNING *`,
-                [inning1TeamId, resultDescription, matchId]
-              );
+              const updateRows3: any[] = await prisma.$queryRaw`
+                UPDATE matches
+                SET match_status = 'completed', winner = ${inning1TeamId}, result_description = ${resultDescription}, completed_at = NOW()
+                WHERE id = ${matchId}
+                RETURNING *
+              `;
 
               console.log(`[AllOut] Inning 2 All-Out! Match completed: ${resultDescription}`);
 
               if (io) {
-                io.to(`match_${matchId}`).emit("matchComplete", {
+                io.to(`match_${matchId}`).emit("matchComplete", serializeForSocket({
                   matchId: String(matchId),
                   message: resultDescription,
                   winner: inning1TeamId,
-                });
+                }));
               }
               
               return res.status(201).json({
                 completed: true,
-                match: updateResult.rows[0],
+                match: updateRows3[0],
                 result: resultDescription,
               });
             }
@@ -1314,31 +1298,30 @@ router.post("/:matchId/ball", verifyToken, isAdmin, async (req, res) => {
             await updateHighestScoreForInning(parseInt(matchId), battingTeamIdNum, format, 3);
             
             // Inning 3 complete - move to inning 4
-            const updateResult = await pool.query(
-              `UPDATE matches 
-               SET inning3_complete = true, current_inning = 4, inning4_team_id = $1
-               WHERE id = $2
-               RETURNING *`,
-              [inning4TeamId, matchId]
-            );
+            const updateRows4: any[] = await prisma.$queryRaw`
+              UPDATE matches
+              SET inning3_complete = true, current_inning = 4, inning4_team_id = ${inning4TeamId}
+              WHERE id = ${matchId}
+              RETURNING *
+            `;
             
             console.log(`[AllOut-Test] Inning 3 ended. Moving to Inning 4. Team ${inning4TeamId} will bat now.`);
 
             if (io) {
-              io.to(`match_${matchId}`).emit("inningEnd", {
+              io.to(`match_${matchId}`).emit("inningEnd", serializeForSocket({
                 matchId: String(matchId),
                 inning: 3,
                 message: `Inning 3 complete! Moving to Inning 4...`,
                 nextInningTeam: inning4TeamId,
                 nextInning: 4,
-              });
+              }));
             }
             
             return res.status(201).json({
               completed: false,
               inningEnded: true,
               inning: 3,
-              match: updateResult.rows[0],
+              match: updateRows4[0],
             });
           } else if (currentInning === 4 && isTestFormat) {
             // Update highest_score for all batsmen in inning 4
@@ -1355,30 +1338,29 @@ router.post("/:matchId/ball", verifyToken, isAdmin, async (req, res) => {
             }
             
             // Fallback: If completion didn't work, at least mark inning4_complete
-            const updateResult = await pool.query(
-              `UPDATE matches 
-               SET inning4_complete = true
-               WHERE id = $1
-               RETURNING *`,
-              [matchId]
-            );
+            const updateRows5: any[] = await prisma.$queryRaw`
+              UPDATE matches
+              SET inning4_complete = true
+              WHERE id = ${matchId}
+              RETURNING *
+            `;
             
             console.log(`[AllOut-Test] Inning 4 ended. All innings complete. Match will be auto-completed based on final scores.`);
 
             if (io) {
-              io.to(`match_${matchId}`).emit("inningEnd", {
+              io.to(`match_${matchId}`).emit("inningEnd", serializeForSocket({
                 matchId: String(matchId),
                 inning: 4,
                 message: `Inning 4 complete! All innings done. Calculating winner...`,
                 matchEnding: true,
-              });
+              }));
             }
             
             return res.status(201).json({
               completed: false,
               inningEnded: true,
               inning: 4,
-              match: updateResult.rows[0],
+              match: updateRows5[0],
             });
           }
         }
@@ -1394,7 +1376,7 @@ router.post("/:matchId/ball", verifyToken, isAdmin, async (req, res) => {
       return res.status(200).json(completionCheck);
     }
 
-    res.status(201).json(ballResult.rows[0]);
+    res.status(201).json(ballRows[0]);
   } catch (err) {
     console.error("Error adding ball:", err);
     res.status(500).send("Server Error");
@@ -1418,8 +1400,19 @@ router.get("/:id/balls", async (req, res) => {
       ORDER BY o.over_number ASC, b.ball_number ASC, b.id ASC
     `;
 
-    const result = await pool.query(q, [id]);
-    const rows = result.rows.map((r: any) => ({
+    const rowsRaw: any[] = await prisma.$queryRaw`
+      SELECT b.id as ball_id, o.over_number, b.ball_number, b.runs, b.extras, b.event, b.is_wicket,
+        b.batsman_id, pb.name as batsman_name,
+        b.bowler_id, pw.name as bowler_name,
+        o.batting_team_id
+      FROM balls b
+      JOIN overs o ON b.over_id = o.id
+      LEFT JOIN players pb ON b.batsman_id = pb.id
+      LEFT JOIN players pw ON b.bowler_id = pw.id
+      WHERE o.match_id = ${id}
+      ORDER BY o.over_number ASC, b.ball_number ASC, b.id ASC
+    `;
+    const rows = rowsRaw.map((r: any) => ({
       ballId: r.ball_id,
       overNumber: r.over_number,
       ballNumber: r.ball_number,
@@ -1446,11 +1439,10 @@ router.get("/:id/scorecard", async (req, res) => {
   const { id } = req.params;
   try {
     // Get match format to determine inning structure
-    const matchFormatQuery = await pool.query(
-      `SELECT format FROM matches WHERE id = $1`,
-      [id]
-    );
-    const format = matchFormatQuery.rows[0]?.format || 'odi';
+    const matchFormatRows: any[] = await prisma.$queryRaw`
+      SELECT format FROM matches WHERE id = ${id}
+    `;
+    const format = matchFormatRows[0]?.format || 'odi';
     const isTestFormat = format === 'test';
     
     // Batting aggregates per batting team, inning, and batsman
@@ -1530,24 +1522,24 @@ router.get("/:id/scorecard", async (req, res) => {
       ORDER BY o.batting_team_id, o.inning_number, b.id DESC
     `;
 
-    const [batRes, disRes, bowlRes, totalsRes, strikerRes] = await Promise.all([
-      pool.query(battingQuery, [id]),
-      pool.query(dismissalsQuery, [id]),
-      pool.query(bowlingQuery, [id]),
-      pool.query(totalsQuery, [id]),
-      pool.query(strikerQuery, [id]),
-    ]);
+    const [batRes, disRes, bowlRes, totalsRes, strikerRes] = (await Promise.all([
+      prisma.$queryRawUnsafe(battingQuery, id),
+      prisma.$queryRawUnsafe(dismissalsQuery, id),
+      prisma.$queryRawUnsafe(bowlingQuery, id),
+      prisma.$queryRawUnsafe(totalsQuery, id),
+      prisma.$queryRawUnsafe(strikerQuery, id),
+    ])) as [any[], any[], any[], any[], any[]];
 
     // Map striker by team_id + inning_number
     const strikerMap: Record<string, number> = {};
-    for (const r of strikerRes.rows) {
+    for (const r of strikerRes) {
       const key = `${r.team_id}_${r.inning_number}`;
       strikerMap[key] = r.striker_id;
     }
 
     // Map dismissals by team_id + inning_number + batsman_id to the earliest dismissal
     const dismissalMap: Record<string, any> = {};
-    for (const r of disRes.rows) {
+    for (const r of disRes) {
       const key = `${r.team_id}_${r.inning_number}_${r.batsman_id}`;
       if (!dismissalMap[key])
         dismissalMap[key] = { event: r.event, bowlerName: r.bowler_name };
@@ -1555,7 +1547,7 @@ router.get("/:id/scorecard", async (req, res) => {
 
     // Group batting rows per inning 
     const innings: Record<number, any> = {};
-    for (const r of batRes.rows) {
+    for (const r of batRes) {
       const teamId = r.team_id;
       const inningNum = r.inning_number;
       if (!innings[inningNum])
@@ -1584,7 +1576,7 @@ router.get("/:id/scorecard", async (req, res) => {
     }
 
     // Attach bowling lists per inning
-    for (const r of bowlRes.rows) {
+    for (const r of bowlRes) {
       const inningNum = r.inning_number;
       if (!innings[inningNum])
         innings[inningNum] = { teamId: r.batting_team_id, batting: [], bowling: [], totals: null };
@@ -1598,7 +1590,7 @@ router.get("/:id/scorecard", async (req, res) => {
     }
 
     // Attach totals per inning
-    for (const r of totalsRes.rows) {
+    for (const r of totalsRes) {
       const inningNum = r.inning_number;
       if (!innings[inningNum])
         innings[inningNum] = { teamId: r.team_id, batting: [], bowling: [], totals: null };
@@ -1665,13 +1657,13 @@ router.get("/:id/insights", async (req, res) => {
       SELECT COUNT(*) AS sixes FROM balls b JOIN overs o ON b.over_id = o.id WHERE o.match_id = $1 AND b.runs = 6;
     `;
 
-    const [battingRes, teamTotalsRes, sixesRes] = await Promise.all([
-      pool.query(battingStatsQuery, [id]),
-      pool.query(teamTotalsQuery, [id]),
-      pool.query(sixesQuery, [id]),
-    ]);
+    const [battingRes, teamTotalsRes, sixesRes] = (await Promise.all([
+      prisma.$queryRawUnsafe(battingStatsQuery, id),
+      prisma.$queryRawUnsafe(teamTotalsQuery, id),
+      prisma.$queryRawUnsafe(sixesQuery, id),
+    ])) as [any[], any[], any[]];
 
-    const battingRows = battingRes.rows.map((r: any) => ({
+    const battingRows = battingRes.map((r: any) => ({
       playerId: r.player_id,
       playerName: r.player_name,
       runs: parseInt(r.runs) || 0,
@@ -1685,14 +1677,14 @@ router.get("/:id/insights", async (req, res) => {
       (p: any) => p.battingPosition >= 4 && p.runs > 30
     ).length;
 
-    const teamTotals = teamTotalsRes.rows.map((r: any) => ({
+    const teamTotals = teamTotalsRes.map((r: any) => ({
       teamId: r.team_id,
       runs: parseInt(r.runs) || 0,
       wickets: parseInt(r.wickets) || 0,
     }));
 
     const totalSixes =
-      (sixesRes.rows[0] && parseInt(sixesRes.rows[0].sixes)) || 0;
+      (sixesRes[0] && parseInt(sixesRes[0].sixes)) || 0;
 
     // Top performers
     const topScorers = battingRows.slice(0, 5);
@@ -1757,16 +1749,16 @@ router.get("/:id/player-stats", async (req, res) => {
       ORDER BY o.batting_team_id, SUM(CASE WHEN b.is_wicket THEN 1 ELSE 0 END) DESC
     `;
 
-    const [battingRes, bowlingRes] = await Promise.all([
-      pool.query(battingQuery, [id]),
-      pool.query(bowlingQuery, [id])
-    ]);
+    const [battingRes, bowlingRes] = (await Promise.all([
+      prisma.$queryRawUnsafe(battingQuery, id),
+      prisma.$queryRawUnsafe(bowlingQuery, id)
+    ])) as [any[], any[]];
 
     // Group stats by team
     const teamStats: Record<number, any> = {};
 
     // batting stats
-    for (const row of battingRes.rows) {
+    for (const row of battingRes) {
       const teamId = row.team_id;
       if (!teamStats[teamId]) {
         teamStats[teamId] = { batting: [], bowling: [] };
@@ -1790,7 +1782,7 @@ router.get("/:id/player-stats", async (req, res) => {
     }
 
     // bowling stats
-    for (const row of bowlingRes.rows) {
+    for (const row of bowlingRes) {
       const teamId = row.batting_team_id;
       if (!teamStats[teamId]) {
         teamStats[teamId] = { batting: [], bowling: [] };

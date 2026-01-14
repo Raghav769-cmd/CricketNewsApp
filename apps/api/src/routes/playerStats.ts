@@ -1,14 +1,19 @@
 import { Router } from "express";
-import pool from "../db/connection.js";
+import { prisma } from "../db/connection.js";
 
 const router: Router = Router();
 
 router.get("/:playerId/stats", async (req, res) => {
   try {
     const { playerId } = req.params;
+    const pId = parseInt(playerId);
 
-    const result = await pool.query(
-      `SELECT 
+    if (isNaN(pId)) {
+      return res.status(400).json({ error: "Invalid player ID" });
+    }
+
+    const result = await prisma.$queryRaw<any[]>`
+      SELECT 
         id,
         player_id,
         team_id,
@@ -30,12 +35,11 @@ router.get("/:playerId/stats", async (req, res) => {
         created_at,
         updated_at
        FROM player_stats 
-       WHERE player_id = $1 
-       ORDER BY format`,
-      [playerId]
-    );
+       WHERE player_id = ${pId}
+       ORDER BY format
+    `;
 
-    res.json(result.rows);
+    res.json(result);
   } catch (error) {
     console.error("Error fetching player stats:", error);
     res.status(500).json({ error: "Failed to fetch player stats" });
@@ -45,6 +49,11 @@ router.get("/:playerId/stats", async (req, res) => {
 router.get("/:playerId/stats/:format", async (req, res) => {
   try {
     const { playerId, format } = req.params;
+    const pId = parseInt(playerId);
+
+    if (isNaN(pId)) {
+      return res.status(400).json({ error: "Invalid player ID" });
+    }
 
     // Validate format
     const validFormats = ["1over", "t20", "odi", "test"];
@@ -52,8 +61,8 @@ router.get("/:playerId/stats/:format", async (req, res) => {
       return res.status(400).json({ error: "Invalid format. Must be: 1over, t20, odi, or test" });
     }
 
-    const result = await pool.query(
-      `SELECT 
+    const result = await prisma.$queryRaw<any[]>`
+      SELECT 
         id,
         player_id,
         team_id,
@@ -75,13 +84,12 @@ router.get("/:playerId/stats/:format", async (req, res) => {
         created_at,
         updated_at
        FROM player_stats 
-       WHERE player_id = $1 AND format = $2`,
-      [playerId, format]
-    );
+       WHERE player_id = ${pId} AND format = ${format}
+    `;
 
-    if (result.rows.length === 0) {
+    if (result.length === 0) {
       return res.json({
-        player_id: playerId,
+        player_id: pId,
         format: format,
         matches_played: 0,
         runs_scored: 0,
@@ -100,7 +108,7 @@ router.get("/:playerId/stats/:format", async (req, res) => {
       });
     }
 
-    res.json(result.rows[0]);
+    res.json(result[0]);
   } catch (error) {
     console.error("Error fetching player stats for format:", error);
     res.status(500).json({ error: "Failed to fetch player stats" });
@@ -110,21 +118,25 @@ router.get("/:playerId/stats/:format", async (req, res) => {
 router.get("/:teamId/players", async (req, res) => {
   try {
     const { teamId } = req.params;
+    const tId = parseInt(teamId);
 
-    const result = await pool.query(
-      `SELECT 
+    if (isNaN(tId)) {
+      return res.status(400).json({ error: "Invalid team ID" });
+    }
+
+    const result = await prisma.$queryRaw<any[]>`
+      SELECT 
         p.id,
         p.name,
         p.team_id,
         t.name as team_name
        FROM players p
        JOIN teams t ON p.team_id = t.id
-       WHERE p.team_id = $1
-       ORDER BY p.name`,
-      [teamId]
-    );
+       WHERE p.team_id = ${tId}
+       ORDER BY p.name
+    `;
 
-    res.json(result.rows);
+    res.json(result);
   } catch (error) {
     console.error("Error fetching team players:", error);
     res.status(500).json({ error: "Failed to fetch team players" });
@@ -134,6 +146,11 @@ router.get("/:teamId/players", async (req, res) => {
 router.get("/:teamId/players-with-stats/:format", async (req, res) => {
   try {
     const { teamId, format } = req.params;
+    const tId = parseInt(teamId);
+
+    if (isNaN(tId)) {
+      return res.status(400).json({ error: "Invalid team ID" });
+    }
 
     // Validate format
     const validFormats = ["1over", "t20", "odi", "test"];
@@ -141,8 +158,8 @@ router.get("/:teamId/players-with-stats/:format", async (req, res) => {
       return res.status(400).json({ error: "Invalid format. Must be: 1over, t20, odi, or test" });
     }
 
-    const result = await pool.query(
-      `SELECT 
+    const result = await prisma.$queryRaw<any[]>`
+      SELECT 
         p.id,
         p.name,
         p.team_id,
@@ -171,13 +188,12 @@ router.get("/:teamId/players-with-stats/:format", async (req, res) => {
         END as strike_rate
        FROM players p
        JOIN teams t ON p.team_id = t.id
-       LEFT JOIN player_stats ps ON p.id = ps.player_id AND ps.format = $2
-       WHERE p.team_id = $1
-       ORDER BY p.name`,
-      [teamId, format]
-    );
+       LEFT JOIN player_stats ps ON p.id = ps.player_id AND ps.format = ${format}
+       WHERE p.team_id = ${tId}
+       ORDER BY p.name
+    `;
 
-    res.json(result.rows);
+    res.json(result);
   } catch (error) {
     console.error("Error fetching team players with stats:", error);
     res.status(500).json({ error: "Failed to fetch team players with stats" });
