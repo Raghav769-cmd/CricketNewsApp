@@ -636,7 +636,42 @@ router.put("/:id/complete", verifyToken, isAdmin, async (req, res) => {
     }
 
     if (match.match_status === 'completed') {
-      return res.status(400).json({ error: "Match is already completed" });
+      // Match is already completed (auto-completed by checkAndCompleteMatchIfNeeded or previously)
+      // Return success with match details instead of error
+      const scoreQuery = `
+        SELECT 
+          o.batting_team_id,
+          SUM(b.runs + COALESCE(CAST(b.extras AS INTEGER), 0)) as total_runs,
+          COUNT(CASE WHEN b.is_wicket THEN 1 END) as wickets
+        FROM overs o
+        LEFT JOIN balls b ON b.over_id = o.id
+        WHERE o.match_id = $1
+        GROUP BY o.batting_team_id
+      `;
+      
+      const scoreResult = await prisma.$queryRawUnsafe(scoreQuery, id) as any[];
+      let team1Score = 0, team2Score = 0, team1Wickets = 0, team2Wickets = 0;
+      
+      for (const row of scoreResult) {
+        const runs = parseInt(row.total_runs) || 0;
+        const wickets = parseInt(row.wickets) || 0;
+        if (row.batting_team_id === match.team1) {
+          team1Score = runs;
+          team1Wickets = wickets;
+        } else if (row.batting_team_id === match.team2) {
+          team2Score = runs;
+          team2Wickets = wickets;
+        }
+      }
+      
+      return res.json({
+        match: match,
+        scores: {
+          team1: { runs: team1Score, wickets: team1Wickets },
+          team2: { runs: team2Score, wickets: team2Wickets },
+        },
+        result: match.result_description,
+      });
     }
 
     // Get scores for both teams

@@ -39,13 +39,16 @@ router.post("/register", async (req: Request, res: Response) => {
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    const usernameExists = await prisma.$queryRaw<{ username: string }[]>`
-  SELECT username FROM admins WHERE username = ${username}
-  UNION
-  SELECT username FROM regular_users WHERE username = ${username}
-`;
+    const adminExists = await prisma.admins.findFirst({
+      where: { username },
+      select: { username: true },
+    });
+    const userExists = await prisma.regular_users.findFirst({
+      where: { username },
+      select: { username: true },
+    });
 
-    if (usernameExists.length > 0) {
+    if (adminExists || userExists) {
       return res
         .status(409)
         .json({
@@ -55,11 +58,16 @@ router.post("/register", async (req: Request, res: Response) => {
     }
 
     if (role === "superadmin" || role === "admin") {
-      const existingRequest = await prisma.$queryRaw<any[]>`
-        SELECT * FROM admin_requests WHERE email = ${email} OR username = ${username}
-      `;
+      const existingRequest = await prisma.admin_requests.findFirst({
+        where: {
+          OR: [
+            { email },
+            { username },
+          ],
+        },
+      });
 
-      if (existingRequest.length > 0) {
+      if (existingRequest) {
         return res
           .status(409)
           .json({
@@ -67,13 +75,17 @@ router.post("/register", async (req: Request, res: Response) => {
           });
       }
 
-      const result = await prisma.$queryRaw<any[]>`
-        INSERT INTO admin_requests (email, password, name, username, status, requested_by_email, role)
-        VALUES (${email}, ${hashedPassword}, ${name || null}, ${username}, ${"pending"}, ${email}, ${role})
-        RETURNING id, email, username, name, status, created_at, role
-      `;
-
-      const request = result[0];
+      const request = await prisma.admin_requests.create({
+        data: {
+          email,
+          password: hashedPassword,
+          name: name || null,
+          username,
+          status: "pending",
+          requested_by_email: email,
+          role,
+        },
+      });
 
       return res.status(201).json({
         message: `${role === "superadmin" ? "Superadmin" : "Admin"} request submitted for approval. An existing superadmin must approve your request.`,
@@ -89,23 +101,29 @@ router.post("/register", async (req: Request, res: Response) => {
       });
     }
 
-    const existingUser = await prisma.$queryRaw<any[]>`
-      SELECT * FROM regular_users WHERE email = ${email} OR username = ${username}
-    `;
+    const existingUser = await prisma.regular_users.findFirst({
+      where: {
+        OR: [
+          { email },
+          { username },
+        ],
+      },
+    });
 
-    if (existingUser.length > 0) {
+    if (existingUser) {
       return res
         .status(409)
         .json({ error: "User with this email or username already exists" });
     }
 
-    const result = await prisma.$queryRaw<any[]>`
-      INSERT INTO regular_users (email, password, name, username)
-      VALUES (${email}, ${hashedPassword}, ${name || null}, ${username})
-      RETURNING id, email, username, name
-    `;
-
-    const user = result[0];
+    const user = await prisma.regular_users.create({
+      data: {
+        email,
+        password: hashedPassword,
+        name: name || null,
+        username,
+      },
+    });
     const token = generateToken(
       user.id,
       user.email,
@@ -137,23 +155,23 @@ router.post("/login", async (req: Request, res: Response) => {
       return res.status(400).json({ error: "Email and password are required" });
     }
 
-    let user = null;
+    let user: any = null;
     let role: "superadmin" | "admin" | "user" = "user";
 
-    const adminResult = await prisma.$queryRaw<any[]>`
-      SELECT id, email, password, name, username, role FROM admins WHERE email = ${email}
-    `;
+    const adminResult = await prisma.admins.findFirst({
+      where: { email },
+    });
 
-    if (adminResult.length > 0) {
-      user = adminResult[0];
-      role = user.role as "superadmin" | "admin" | "user";
+    if (adminResult) {
+      user = adminResult;
+      role = (adminResult.role as "superadmin" | "admin") || "admin";
     } else {
-      const userResult = await prisma.$queryRaw<any[]>`
-        SELECT id, email, password, name, username FROM regular_users WHERE email = ${email}
-      `;
+      const userResult = await prisma.regular_users.findFirst({
+        where: { email },
+      });
 
-      if (userResult.length > 0) {
-        user = userResult[0];
+      if (userResult) {
+        user = userResult;
         role = "user";
       }
     }
@@ -195,17 +213,17 @@ router.get("/me", verifyToken, async (req: Request, res: Response) => {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    let dbUser = null;
+    let dbUser: any = null;
     if (user.role === "admin" || user.role === "superadmin") {
-      const adminResult = await prisma.$queryRaw<any[]>`
-        SELECT id, email, username, name, role FROM admins WHERE id = ${user.id}
-      `;
-      dbUser = adminResult[0];
+      dbUser = await prisma.admins.findFirst({
+        where: { id: user.id },
+        select: { id: true, email: true, username: true, name: true, role: true },
+      });
     } else {
-      const userResult = await prisma.$queryRaw<any[]>`
-        SELECT id, email, username, name FROM regular_users WHERE id = ${user.id}
-      `;
-      dbUser = userResult[0];
+      dbUser = await prisma.regular_users.findFirst({
+        where: { id: user.id },
+        select: { id: true, email: true, username: true, name: true },
+      });
     }
 
     res.json({
@@ -238,10 +256,10 @@ router.get(
           .json({ error: "Only superadmins can view pending requests" });
       }
 
-      const result = await prisma.$queryRaw<any[]>`
-        SELECT id, email, username, name, status, requested_by_email, created_at, role
-        FROM admin_requests WHERE status = ${"pending"} ORDER BY created_at DESC
-      `;
+      const result = await prisma.admin_requests.findMany({
+        where: { status: "pending" },
+        orderBy: { created_at: "desc" },
+      });
 
       res.json({
         requests: result,
@@ -267,37 +285,50 @@ router.post(
 
       const requestId = req.params.id;
 
-      const requestResult = await prisma.$queryRaw<any[]>`
-        SELECT * FROM admin_requests WHERE id = ${requestId} AND status = ${"pending"}
-      `;
+      const adminRequest = await prisma.admin_requests.findFirst({
+        where: {
+          id: parseInt(requestId ?? "0"),
+          status: "pending",
+        },
+      });
 
-      if (requestResult.length === 0) {
+      if (!adminRequest) {
         return res
           .status(404)
           .json({ error: "Request not found or already processed" });
       }
-      const adminRequest = requestResult[0];
 
-      const existingAdmin = await prisma.$queryRaw<any[]>`
-        SELECT * FROM admins WHERE email = ${adminRequest.email} OR username = ${adminRequest.username}
-      `;
+      const existingAdmin = await prisma.admins.findFirst({
+        where: {
+          OR: [
+            { email: adminRequest.email },
+            { username: adminRequest.username },
+          ],
+        },
+      });
 
-      if (existingAdmin.length > 0) {
+      if (existingAdmin) {
         return res
           .status(409)
           .json({ error: "Email or username already exists" });
       }
-      const adminResult = await prisma.$queryRaw<any[]>`
-        INSERT INTO admins (email, password, name, username, role)
-        VALUES (${adminRequest.email}, ${adminRequest.password}, ${adminRequest.name}, ${adminRequest.username}, ${adminRequest.role || "admin"})
-        RETURNING id, email, name, username, role
-      `;
 
-      const newAdmin = adminResult[0];
+      const newAdmin = await prisma.admins.create({
+        data: {
+          email: adminRequest.email,
+          password: adminRequest.password,
+          name: adminRequest.name || null,
+          username: adminRequest.username,
+          role: adminRequest.role || "admin",
+        },
+      });
 
-      await prisma.$queryRaw`
-        UPDATE admin_requests SET status = ${"approved"}, approved_by_admin_id = ${req.user?.id}, approved_at = CURRENT_TIMESTAMP WHERE id = ${requestId}
-      `;
+      await prisma.admin_requests.update({
+        where: { id: parseInt(requestId ?? "0") },
+        data: {
+          status: "approved",
+        },
+      });
 
       res.json({
         message: `${newAdmin.role === "superadmin" ? "Superadmin" : "Admin"} request approved successfully`,
@@ -330,19 +361,25 @@ router.post(
       const requestId = req.params.id;
       const { reason } = req.body;
 
-      const requestResult = await prisma.$queryRaw<any[]>`
-        SELECT * FROM admin_requests WHERE id = ${requestId} AND status = ${"pending"}
-      `;
+      const adminRequest = await prisma.admin_requests.findFirst({
+        where: {
+          id: parseInt(requestId ?? "0"),
+          status: "pending",
+        },
+      });
 
-      if (requestResult.length === 0) {
+      if (!adminRequest) {
         return res
           .status(404)
           .json({ error: "Request not found or already processed" });
       }
 
-      await prisma.$queryRaw`
-        UPDATE admin_requests SET status = ${"rejected"}, approved_by_admin_id = ${req.user?.id}, rejection_reason = ${reason || null}, approved_at = CURRENT_TIMESTAMP WHERE id = ${requestId}
-      `;
+      await prisma.admin_requests.update({
+        where: { id: parseInt(requestId ?? "0") },
+        data: {
+          status: "rejected",
+        },
+      });
 
       res.json({
         message: "Admin request rejected successfully",

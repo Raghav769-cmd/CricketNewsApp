@@ -6,7 +6,12 @@ const router: Router = Router();
 // Get all players
 router.get('/', async (req, res) => {
   try {
-    const result = await prisma.$queryRaw<any[]>`SELECT * FROM players`;
+    const rows = await prisma.players.findMany();
+    const result = rows.map((r: any) => ({
+      id: r.id,
+      name: r.name,
+      team_id: r.team_id,
+    }));
     res.json(result);
   } catch (err) {
     console.error('Error fetching players:', err);
@@ -24,11 +29,12 @@ router.get('/:id', async (req, res) => {
   }
 
   try {
-    const result = await prisma.$queryRaw<any[]>`SELECT * FROM players WHERE id = ${pId}`;
-    if (result.length === 0) {
+    const row = await prisma.players.findUnique({ where: { id: pId } });
+    if (!row) {
       return res.status(404).json({ error: 'Player not found' });
     }
-    res.json(result[0]);
+    const result = { id: row.id, name: row.name, team_id: row.team_id };
+    res.json(result);
   } catch (err) {
     console.error('Error fetching player:', err);
     res.status(500).json({ error: 'Failed to fetch player' });
@@ -42,10 +48,13 @@ router.post('/', async (req, res) => {
     if (!name || !team_id) {
       return res.status(400).json({ error: 'Name and team_id are required' });
     }
-    const result = await prisma.$queryRaw<any[]>`
-      INSERT INTO players (name, team_id) VALUES (${name}, ${team_id}) RETURNING *
-    `;
-    res.status(201).json(result[0]);
+    const teamExists = await prisma.teams.findUnique({ where: { id: team_id } });
+    if (!teamExists) {
+      return res.status(400).json({ error: 'Team not found' });
+    }
+    const row = await prisma.players.create({ data: { name, team_id } });
+    const result = { id: row.id, name: row.name, team_id: row.team_id };
+    res.status(201).json(result);
   } catch (err) {
     console.error('Error creating player:', err);
     res.status(500).json({ error: 'Failed to create player' });
@@ -66,13 +75,19 @@ router.put('/:id', async (req, res) => {
     if (!name || !team_id) {
       return res.status(400).json({ error: 'Name and team_id are required' });
     }
-    const result = await prisma.$queryRaw<any[]>`
-      UPDATE players SET name = ${name}, team_id = ${team_id} WHERE id = ${pId} RETURNING *
-    `;
-    if (result.length === 0) {
+    const [playerExists, teamExists] = await Promise.all([
+      prisma.players.findUnique({ where: { id: pId } }),
+      prisma.teams.findUnique({ where: { id: team_id } }),
+    ]);
+    if (!playerExists) {
       return res.status(404).json({ error: 'Player not found' });
     }
-    res.json(result[0]);
+    if (!teamExists) {
+      return res.status(400).json({ error: 'Team not found' });
+    }
+    const row = await prisma.players.update({ where: { id: pId }, data: { name, team_id } });
+    const result = { id: row.id, name: row.name, team_id: row.team_id };
+    res.json(result);
   } catch (err) {
     console.error('Error updating player:', err);
     res.status(500).json({ error: 'Failed to update player' });
@@ -89,12 +104,13 @@ router.delete('/:id', async (req, res) => {
   }
 
   try {
-    const result = await prisma.$queryRaw<any[]>`DELETE FROM players WHERE id = ${pId} RETURNING *`;
-    if (result.length === 0) {
+    const row = await prisma.players.delete({ where: { id: pId } });
+    const player = { id: row.id, name: row.name, team_id: row.team_id };
+    res.json({ message: 'Player deleted successfully', player });
+  } catch (err: any) {
+    if (err?.code === 'P2025') {
       return res.status(404).json({ error: 'Player not found' });
     }
-    res.json({ message: 'Player deleted successfully', player: result[0] });
-  } catch (err) {
     console.error('Error deleting player:', err);
     res.status(500).json({ error: 'Failed to delete player' });
   }
@@ -111,71 +127,60 @@ router.get('/:playerId/match/:matchId/stats', async (req, res) => {
   }
 
   try {
-    const playerRes = await prisma.$queryRaw<any[]>`
-      SELECT id, name, team_id FROM players WHERE id = ${pId}
-    `;
-    if (playerRes.length === 0) {
+    const player = await prisma.players.findUnique({ where: { id: pId } });
+    if (!player) {
       return res.status(404).json({ error: 'Player not found' });
     }
-    const player = playerRes[0];
 
-    // Batting stats
-    const [battingRes, bowlingRes] = await Promise.all([
-      prisma.$queryRaw<any[]>`
-        SELECT 
-          b.batsman_id,
-          p.name AS player_name,
-          SUM(b.runs) AS runs,
-          COUNT(*) FILTER (WHERE NOT ((COALESCE(b.extras,'0') ~* '^(wide|wd|no-?ball|nb)') OR (COALESCE(b.event,'') ~* '^(wide|wd|no-?ball|nb)'))) AS balls,
-          COUNT(*) FILTER (WHERE b.runs = 4) AS fours,
-          COUNT(*) FILTER (WHERE b.runs = 6) AS sixes,
-          COUNT(*) FILTER (WHERE b.is_wicket) AS times_out,
-          MAX(CASE WHEN b.is_wicket THEN b.event END) AS dismissal
-        FROM balls b
-        JOIN overs o ON b.over_id = o.id
-        LEFT JOIN players p ON b.batsman_id = p.id
-        WHERE o.match_id = ${mId} AND b.batsman_id = ${pId}
-        GROUP BY b.batsman_id, p.name
-      `,
-      prisma.$queryRaw<any[]>`
-        SELECT 
-          b.bowler_id,
-          p.name AS player_name,
-          COUNT(*) FILTER (WHERE NOT ((COALESCE(b.extras,'0') ~* '^(wide|wd|no-?ball|nb)') OR (COALESCE(b.event,'') ~* '^(wide|wd|no-?ball|nb)'))) AS balls,
-          SUM(b.runs + COALESCE(CAST(b.extras AS INTEGER),0)) AS runs_conceded,
-          SUM(CASE WHEN b.is_wicket THEN 1 ELSE 0 END) AS wickets,
-          COUNT(*) FILTER (WHERE b.runs = 4) AS fours_conceded,
-          COUNT(*) FILTER (WHERE b.runs = 6) AS sixes_conceded
-        FROM balls b
-        JOIN overs o ON b.over_id = o.id
-        LEFT JOIN players p ON b.bowler_id = p.id
-        WHERE o.match_id = ${mId} AND b.bowler_id = ${pId}
-        GROUP BY b.bowler_id, p.name
-      `
-    ]);
+    // Fetch all balls for this match to compute batting and bowling stats
+    const overs = await prisma.overs.findMany({ where: { match_id: mId }, select: { id: true } });
+    const overIds = overs.map((o: any) => o.id);
+    
+    const balls = await prisma.balls.findMany({
+      where: { over_id: { in: overIds } },
+    });
 
-    const batting = battingRes.length > 0 ? {
-      runs: parseInt(battingRes[0].runs) || 0,
-      balls: parseInt(battingRes[0].balls) || 0,
-      fours: parseInt(battingRes[0].fours) || 0,
-      sixes: parseInt(battingRes[0].sixes) || 0,
-      timesOut: parseInt(battingRes[0].times_out) || 0,
-      dismissal: battingRes[0].dismissal || null,
-      strikeRate: (battingRes[0].balls > 0) ? 
-        ((parseInt(battingRes[0].runs) || 0) / parseInt(battingRes[0].balls) * 100).toFixed(2) : 
-        '0.00'
-    } : null;
+    // Compute batting stats (batsman_id == pId)
+    const battingBalls = balls.filter((b: any) => b.batsman_id === pId);
+    let batting = null;
+    if (battingBalls.length > 0) {
+      const runs = battingBalls.reduce((sum: number, b: any) => sum + (b.runs || 0), 0);
+      // count balls that are NOT extras (wide, nb, wd)
+      const ballsFaced = battingBalls.filter((b: any) => {
+        const extras = b.extras ? String(b.extras).trim() : '';
+        const event = b.event ? String(b.event).trim() : '';
+        const isExtra = /^(wide|wd|no-?ball|nb)/.test(extras) || /^(wide|wd|no-?ball|nb)/.test(event);
+        return !isExtra;
+      }).length;
+      const fours = battingBalls.filter((b: any) => b.runs === 4).length;
+      const sixes = battingBalls.filter((b: any) => b.runs === 6).length;
+      const timesOut = battingBalls.filter((b: any) => b.is_wicket).length;
+      const dismissal = battingBalls.find((b: any) => b.is_wicket)?.event || null;
+      const strikeRate = ballsFaced > 0 ? ((runs / ballsFaced) * 100).toFixed(2) : '0.00';
+      batting = { runs, balls: ballsFaced, fours, sixes, timesOut, dismissal, strikeRate };
+    }
 
-    const bowling = bowlingRes.length > 0 ? {
-      balls: parseInt(bowlingRes[0].balls) || 0,
-      runsConceded: parseInt(bowlingRes[0].runs_conceded) || 0,
-      wickets: parseInt(bowlingRes[0].wickets) || 0,
-      economy: (bowlingRes[0].balls > 0) ? 
-        ((parseInt(bowlingRes[0].runs_conceded) || 0) / (parseInt(bowlingRes[0].balls) || 0) * 6).toFixed(2) : 
-        '0.00',
-      foursConceded: parseInt(bowlingRes[0].fours_conceded) || 0,
-      sixesConceded: parseInt(bowlingRes[0].sixes_conceded) || 0
-    } : null;
+    // Compute bowling stats (bowler_id == pId)
+    const bowlingBalls = balls.filter((b: any) => b.bowler_id === pId);
+    let bowling = null;
+    if (bowlingBalls.length > 0) {
+      // count balls that are NOT extras
+      const ballsBowled = bowlingBalls.filter((b: any) => {
+        const extras = b.extras ? String(b.extras).trim() : '';
+        const event = b.event ? String(b.event).trim() : '';
+        const isExtra = /^(wide|wd|no-?ball|nb)/.test(extras) || /^(wide|wd|no-?ball|nb)/.test(event);
+        return !isExtra;
+      }).length;
+      const runsConceded = bowlingBalls.reduce((sum: number, b: any) => {
+        const extras = b.extras ? parseInt(String(b.extras)) : 0;
+        return sum + (b.runs || 0) + extras;
+      }, 0);
+      const wickets = bowlingBalls.filter((b: any) => b.is_wicket).length;
+      const economy = ballsBowled > 0 ? ((runsConceded / ballsBowled) * 6).toFixed(2) : '0.00';
+      const foursConceded = bowlingBalls.filter((b: any) => b.runs === 4).length;
+      const sixesConceded = bowlingBalls.filter((b: any) => b.runs === 6).length;
+      bowling = { balls: ballsBowled, runsConceded, wickets, economy, foursConceded, sixesConceded };
+    }
 
     res.json({
       playerId: pId,
@@ -183,7 +188,7 @@ router.get('/:playerId/match/:matchId/stats', async (req, res) => {
       teamId: player.team_id,
       matchId: mId,
       batting,
-      bowling
+      bowling,
     });
   } catch (err) {
     console.error('Error fetching player match stats:', err);

@@ -282,7 +282,7 @@ export default function MatchDetailPage() {
             </div>
 
             {/* Action Buttons */}
-            <div className="px-3 sm:px-6 py-3 sm:py-4 bg-slate-900 border-t border-slate-800">
+            {/* <div className="px-3 sm:px-6 py-3 sm:py-4 bg-slate-900 border-t border-slate-800">
               <button 
                 onClick={() => router.push(`/matches/${matchId}/player-descriptions`)}
                 className="w-full sm:w-auto px-4 sm:px-6 py-2 sm:py-2.5 bg-linear-to-r from-lime-500 to-lime-600 hover:from-lime-600 hover:to-lime-700 text-black font-semibold rounded-lg transition-all shadow-sm hover:shadow-md flex items-center justify-center space-x-2 text-xs sm:text-sm"
@@ -292,7 +292,7 @@ export default function MatchDetailPage() {
                 </svg>
                 <span>Player Descriptions</span>
               </button>
-            </div>
+            </div> */}
           </div>
 
           {loading ? (

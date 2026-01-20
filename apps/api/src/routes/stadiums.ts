@@ -5,9 +5,9 @@ const router: Router = Router();
 
 router.get("/", async (req, res) => {
   try {
-    const result = await prisma.$queryRaw<any[]>`
-      SELECT id, name, city, country, capacity FROM stadiums ORDER BY name ASC
-    `;
+    const result = await prisma.stadiums.findMany({
+      orderBy: { name: "asc" },
+    });
     res.json(result);
   } catch (error) {
     console.error("Error fetching stadiums:", error);
@@ -24,15 +24,15 @@ router.get("/:id", async (req, res) => {
       return res.status(400).json({ error: "Invalid stadium ID" });
     }
 
-    const result = await prisma.$queryRaw<any[]>`
-      SELECT id, name, city, country, capacity FROM stadiums WHERE id = ${stadiumId}
-    `;
+    const result = await prisma.stadiums.findUnique({
+      where: { id: stadiumId },
+    });
 
-    if (result.length === 0) {
+    if (!result) {
       return res.status(404).json({ error: "Stadium not found" });
     }
 
-    res.json(result[0]);
+    res.json(result);
   } catch (error) {
     console.error("Error fetching stadium:", error);
     res.status(500).json({ error: "Failed to fetch stadium" });

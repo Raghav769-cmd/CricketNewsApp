@@ -6,7 +6,7 @@ const router: Router = Router();
 // get all teams
 router.get('/', async (req, res) => {
   try {
-    const result = await prisma.$queryRaw<any[]>`SELECT * FROM teams`;
+    const result = await prisma.teams.findMany();
     res.json(result);
   } catch (err) {
     console.error('Error fetching teams:', err);
@@ -18,11 +18,13 @@ router.get('/', async (req, res) => {
 router.get('/:id', async (req, res) => {
   const { id } = req.params;
   try {
-    const result = await prisma.$queryRaw<any[]>`SELECT * FROM teams WHERE id = ${parseInt(id)}`;
-    if (result.length === 0) {
+    const result = await prisma.teams.findUnique({
+      where: { id: parseInt(id) },
+    });
+    if (!result) {
       return res.status(404).json({ error: 'Team not found' });
     }
-    res.json(result[0]);
+    res.json(result);
   } catch (err) {
     console.error('Error fetching team:', err);
     res.status(500).json({ error: 'Failed to fetch team' });
@@ -37,13 +39,18 @@ router.put('/:id', async (req, res) => {
     if (!name) {
       return res.status(400).json({ error: 'Team name is required' });
     }
-    const result = await prisma.$queryRaw<any[]>`
-      UPDATE teams SET name = ${name} WHERE id = ${parseInt(id)} RETURNING *
-    `;
-    if (result.length === 0) {
-      return res.status(404).json({ error: 'Team not found' });
+    try {
+      const result = await prisma.teams.update({
+        where: { id: parseInt(id) },
+        data: { name },
+      });
+      res.json(result);
+    } catch (err: any) {
+      if (err.code === 'P2025') {
+        return res.status(404).json({ error: 'Team not found' });
+      }
+      throw err;
     }
-    res.json(result[0]);
   } catch (err) {
     console.error('Error updating team:', err);
     res.status(500).json({ error: 'Failed to update team' });
@@ -54,13 +61,17 @@ router.put('/:id', async (req, res) => {
 router.delete('/:id', async (req, res) => {
   const { id } = req.params;
   try {
-    const result = await prisma.$queryRaw<any[]>`
-      DELETE FROM teams WHERE id = ${parseInt(id)} RETURNING *
-    `;
-    if (result.length === 0) {
-      return res.status(404).json({ error: 'Team not found' });
+    try {
+      const result = await prisma.teams.delete({
+        where: { id: parseInt(id) },
+      });
+      res.json({ message: 'Team deleted successfully', team: result });
+    } catch (err: any) {
+      if (err.code === 'P2025') {
+        return res.status(404).json({ error: 'Team not found' });
+      }
+      throw err;
     }
-    res.json({ message: 'Team deleted successfully', team: result[0] });
   } catch (err) {
     console.error('Error deleting team:', err);
     res.status(500).json({ error: 'Failed to delete team' });

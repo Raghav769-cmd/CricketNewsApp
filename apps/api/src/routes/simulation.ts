@@ -22,11 +22,15 @@ router.post('/:matchId/simulate', verifyToken, isAdmin, async (req, res) => {
 
     for (let over = 1; over <= 20; over++) {
       try {
-        // Insert an over into the database
-        const overResult = await prisma.$queryRaw<any[]>`
-          INSERT INTO overs (match_id, over_number) VALUES (${parsedMatchId}, ${over}) RETURNING id
-        `;
-        const overId = overResult[0].id;
+        // Create an over in the database
+        const overResult = await prisma.overs.create({
+          data: {
+            match_id: parsedMatchId,
+            over_number: over,
+            inning_number: 1, // Default to inning 1
+          },
+        });
+        const overId = overResult.id;
 
         for (let ball = 1; ball <= 6; ball++) {
           try {
@@ -35,10 +39,15 @@ router.post('/:matchId/simulate', verifyToken, isAdmin, async (req, res) => {
             const runs = possibleRuns[Math.floor(Math.random() * possibleRuns.length)];
             const event = runs === 4 ? '4' : runs === 6 ? '6' : null;
 
-            // Insert a ball into the database
-            await prisma.$queryRaw`
-              INSERT INTO balls (over_id, ball_number, runs, event) VALUES (${overId}, ${ball}, ${runs}, ${event})
-            `;
+            // Create a ball in the database
+            await prisma.balls.create({
+              data: {
+                over_id: overId,
+                ball_number: ball,
+                runs,
+                event,
+              },
+            });
 
             // Emit live update over socket.io if available
             try {
